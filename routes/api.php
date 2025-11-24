@@ -55,9 +55,6 @@ Route::get('/test-perm', function () {
         return '❌ Error al guardar archivo: ' . $e->getMessage();
     }
 });
-Route::prefix('v1')->group(function () {
-    Route::get('/test', fn() => 'API test OK');
-});
 
 /*
 |--------------------------------------------------------------------------
