@@ -32,19 +32,28 @@ use App\Http\Controllers\Payment\StripeController;
 
 /** Test API basic */
 Route::get('/test', fn() => 'API test OK');
+Route::get('/clear', function() {
+    Artisan::call('config:clear');
+    Artisan::call('cache:clear');
+    return 'Cache cleared';
+});
+
 
 Route::get('/test-mail', function () {
     try {
-        Mail::raw('Correo de prueba SMTP desde Laravel', function($message) {
-            $message->to('achraf003@gmail.com')->subject('Prueba SMTP Laravel');
+        Mail::raw('Correo de prueba SendGrid Laravel', function($message) {
+            $message->to('achraf003@gmail.com')->subject('Prueba SendGrid Laravel');
         });
+
         return response()->json(['success' => true, 'message' => 'Correo enviado correctamente.']);
+
     } catch (\Exception $e) {
+        // Mostrar error completo para debug
         return response()->json([
             'success' => false,
-            'message' => 'Error SMTP',
+            'message' => 'Error SendGrid',
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
+            'trace' => $e->getTraceAsString(),
         ], 500);
     }
 });
