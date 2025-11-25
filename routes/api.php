@@ -33,18 +33,22 @@ use App\Http\Controllers\Payment\StripeController;
 /** Test API basic */
 Route::get('/test', fn() => 'API test OK');
 
-/** Test email */
 Route::get('/test-mail', function () {
     try {
         Mail::raw('Correo de prueba SMTP desde Laravel', function($message) {
-            $message->to('decoraycolchon10@gmail.com')->subject('Prueba SMTP Laravel');
+            $message->to('achraf003@gmail.com')->subject('Prueba SMTP Laravel');
         });
         return response()->json(['success' => true, 'message' => 'Correo enviado correctamente.']);
     } catch (\Exception $e) {
-        Log::error('Error enviando correo: ' . $e->getMessage());
-        return response()->json(['success' => false, 'message' => 'Error SMTP', 'error' => $e->getMessage()], 500);
+        return response()->json([
+            'success' => false,
+            'message' => 'Error SMTP',
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
     }
 });
+
 
 /** Test file permissions */
 Route::get('/test-perm', function () {
