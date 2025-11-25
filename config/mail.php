@@ -2,16 +2,21 @@
 
 return [
 
-    'default' => env('MAIL_MAILER', 'smtp'), // usar smtp
+    'default' => env('MAIL_MAILER', 'sendgrid'),
 
     'mailers' => [
+        'sendgrid' => [
+            'transport' => 'sendgrid',
+            'api_key' => env('SENDGRID_API_KEY'),
+        ],
+
         'smtp' => [
             'transport' => 'smtp',
             'host' => env('MAIL_HOST', 'smtp.sendgrid.net'),
             'port' => env('MAIL_PORT', 587),
             'encryption' => env('MAIL_ENCRYPTION', 'tls'),
-            'username' => env('MAIL_USERNAME'), // literal "apikey"
-            'password' => env('MAIL_PASSWORD'), // tu SendGrid API Key
+            'username' => env('MAIL_USERNAME'),
+            'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
         ],
 
@@ -27,7 +32,7 @@ return [
         'failover' => [
             'transport' => 'failover',
             'mailers' => [
-                'smtp',
+                'sendgrid',
                 'log',
             ],
             'retry_after' => 60,
@@ -35,7 +40,7 @@ return [
     ],
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'decora10.test@gmail.com'),
+        'address' => env('MAIL_FROM_ADDRESS', 'decora10.colchon10@gmail.com'),
         'name' => env('MAIL_FROM_NAME', 'Decora10'),
     ],
 
