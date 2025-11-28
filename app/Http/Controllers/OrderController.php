@@ -449,16 +449,24 @@ class OrderController extends Controller
      */
     private function generateOrderPDF($order)
     {
-        $basePath = public_path('storage/photos');
-        $logoHeader = file_exists($basePath . '/header.png') ? 'data:image/png;base64,' . base64_encode(file_get_contents($basePath . '/header.png')) : '';
-        $firmaSrc = file_exists($basePath . '/Decor@10.png') ? 'data:image/png;base64,' . base64_encode(file_get_contents($basePath . '/Decor@10.png')) : '';
-        $telefonoIcono = file_exists($basePath . '/telefono.png') ? 'data:image/png;base64,' . base64_encode(file_get_contents($basePath . '/telefono.png')) : '';
+        // URLs desde Cloudinary
+        $logoHeader    = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244414/blade-resources/header.png';
+        $firmaSrc      = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244411/blade-resources/Decor_10.png';
+        $telefonoIcono = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244416/blade-resources/telefono.png';
+        $dec10         = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244408/blade-resources/dec10.jpg'; // si lo necesitas en algún sitio extra
+
+        // Convertir a base64 para que dompdf lo renderice
+        $logoHeader    = 'data:image/png;base64,' . base64_encode(file_get_contents($logoHeader));
+        $firmaSrc      = 'data:image/png;base64,' . base64_encode(file_get_contents($firmaSrc));
+        $telefonoIcono = 'data:image/png;base64,' . base64_encode(file_get_contents($telefonoIcono));
+        
 
         $pdf = Pdf::loadView('pdf.order', [
-            'order' => $order->load('orderItems.product', 'user'),
-            'logoHeader' => $logoHeader,
-            'firmaSrc' => $firmaSrc,
-            'telefonoIcono' => $telefonoIcono,
+            'order'        => $order->load('orderItems.product', 'user'),
+            'logoHeader'   => $logoHeader,
+            'firmaSrc'     => $firmaSrc,
+            'telefonoIcono'=> $telefonoIcono,
+
         ]);
 
         $pdfPath = storage_path("app/public/invoices/order_{$order->id}.pdf");

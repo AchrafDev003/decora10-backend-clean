@@ -19,6 +19,15 @@ class Kernel extends ConsoleKernel
         // Limpia promos caducadas una vez al día (medianoche)
         $schedule->job(new ExpirePromosJob)->dailyAt('00:00');
     }
+    protected $commands = [
+        \App\Console\Commands\UploadBladeResources::class,
+    ];
+
+
+
+
+
+
 
     /* protected function commands(): void
     {

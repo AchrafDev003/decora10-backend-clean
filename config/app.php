@@ -128,6 +128,8 @@ return [
     ],
 
     'reservation_notify_minutes' => env('RESERVATION_NOTIFY_MINUTES', 3),
+    'Cloudinary' => CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary::class,
+
 
 
 ];
