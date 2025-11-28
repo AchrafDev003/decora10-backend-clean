@@ -18,7 +18,7 @@ return [
         'http://127.0.0.1:3000',
 
         // Producción (CORRECTO)
-        'https://decora10-frontend-5ls7.vercel.app/',
+        'https://decora10-frontend-5ls7.vercel.app',
 
         // Permitir dominio configurado en .env (opcional)
         env('FRONTEND_URL'),
