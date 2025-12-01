@@ -17,12 +17,17 @@ return [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
 
-        // Producción (CORRECTO)
+        // Producción en Vercel (deploy por defecto)
         'https://decora10-frontend-5ls7.vercel.app',
 
-        // Permitir dominio configurado en .env (opcional)
+        // Tu dominio final
+        'https://decora10.com',
+        'https://www.decora10.com',
+
+        // Permitir dominio configurado en .env
         env('FRONTEND_URL'),
     ],
+
 
     'allowed_origins_patterns' => [],
 
