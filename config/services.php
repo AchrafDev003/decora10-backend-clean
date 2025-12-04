@@ -14,11 +14,14 @@ return [
     |
     */
     'stripe' => [
-        'key' => trim(env('STRIPE_KEY', ''), '"'),
-        'secret' => trim(env('STRIPE_SECRET', ''), '"'),
+        // Selecciona automáticamente según STRIPE_MODE
+        'key' => env('STRIPE_MODE', 'test') === 'live'
+            ? trim(env('STRIPE_KEY_LIVE', ''), '"')
+            : trim(env('STRIPE_KEY_TEST', ''), '"'),
+        'secret' => env('STRIPE_MODE', 'test') === 'live'
+            ? trim(env('STRIPE_SECRET_LIVE', ''), '"')
+            : trim(env('STRIPE_SECRET_TEST', ''), '"'),
     ],
-
-
 
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
