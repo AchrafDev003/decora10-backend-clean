@@ -39,6 +39,8 @@ class StripeController extends Controller
 
             Stripe::setApiKey(config('services.stripe.secret'));
 
+            Log::info('Stripe key cargada: ' . config('services.stripe.secret'));
+
             $intent = PaymentIntent::create([
                 'amount' => (int) ($amount * 100),
                 'currency' => 'eur',
