@@ -60,14 +60,18 @@ class StripeController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            // Logueamos el error completo en los logs de Railway
             Log::error('Stripe Error: ' . $e->getMessage());
+            Log::error('Stripe Trace: ' . $e->getTraceAsString());
 
+            // 🚨 Devolvemos un JSON con el mensaje exacto SOLO para depuración
             return response()->json([
                 'success' => false,
-                'error' => 'Error al crear el intento de pago',
-                'message' => $e->getMessage(),
+                'error' => 'Error creando PaymentIntent',
+                'stripe_message' => $e->getMessage(),   // <--- mensaje real de Stripe
             ], 500);
         }
+
     }
 
 }
