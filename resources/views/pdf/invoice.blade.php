@@ -64,7 +64,7 @@
 
 <div class="footer">
     <p>Gracias por comprar en <strong>Decora10</strong>. Esta factura sirve como comprobante de tu pedido.</p>
-    <p>Si tienes alguna duda, contáctanos en <a href="mailto:soporte@decora10.com">soporte@decora10.com</a></p>
+    <p>Si tienes alguna duda, contáctanos en <a href="mailto:achraf003@gmail.com">soporte@decora10.com</a></p>
 </div>
 
 </body>

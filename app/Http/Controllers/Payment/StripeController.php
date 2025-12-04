@@ -10,13 +10,8 @@ use Illuminate\Support\Facades\Log;
 
 class StripeController extends Controller
 {
-    /**
-     * Crea un PaymentIntent en Stripe.
-     * Compatible con tarjeta y Bizum (Sofort en test/local).
-     */
     public function createIntent(Request $request)
     {
-        // Validación de entrada
         $request->validate([
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|string',
@@ -30,14 +25,18 @@ class StripeController extends Controller
             $userId = $request->input('user_id');
             $orderId = $request->input('order_id', null);
 
-            // Detectar entorno
-            $stripeMode = env('STRIPE_MODE', 'live'); // 'test' o 'live'
-            $envLabel = $stripeMode === 'test' ? 'test' : 'production';
+            // ⚡ Stripe mode: test o live
+            $stripeMode = env('STRIPE_MODE', 'live');
+            $secretKey = $stripeMode === 'test'
+                ? trim(env('STRIPE_SECRET_TEST'), '"')
+                : trim(env('STRIPE_SECRET_LIVE'), '"');
 
-            // Validar métodos de pago según entorno
+            Stripe::setApiKey($secretKey);
+
+            // Métodos válidos según modo
             $validMethods = $stripeMode === 'test' ? ['card', 'sofort'] : ['card', 'bizum'];
             if ($stripeMode === 'test' && $paymentMethod === 'bizum') {
-                $paymentMethod = 'sofort'; // Simulación Bizum en test
+                $paymentMethod = 'sofort';
             }
 
             if (!in_array($paymentMethod, $validMethods)) {
@@ -47,23 +46,16 @@ class StripeController extends Controller
                 ], 400);
             }
 
-            // Seleccionar la clave correcta según el modo
-            $secretKey = $stripeMode === 'test'
-                ? env('STRIPE_SECRET_TEST')
-                : env('STRIPE_SECRET_LIVE');
-
-            Stripe::setApiKey($secretKey);
-
             // Crear PaymentIntent
             $intent = PaymentIntent::create([
-                'amount' => (int) ($amount * 100), // Stripe usa céntimos
+                'amount' => (int) ($amount * 100),
                 'currency' => 'eur',
                 'payment_method_types' => [$paymentMethod],
                 'metadata' => [
-                    'description' => 'Pago Decora10 pedido' . ($orderId ? " #$orderId" : ""),
+                    'description' => "Decora10 pago $paymentMethod" . ($orderId ? " - Pedido #$orderId" : ""),
                     'user_id' => $userId,
                     'method' => $paymentMethod,
-                    'env' => $envLabel,
+                    'env' => $stripeMode,
                 ],
             ]);
 
@@ -71,11 +63,12 @@ class StripeController extends Controller
                 'success' => true,
                 'clientSecret' => $intent->client_secret,
                 'payment_method' => $paymentMethod,
-                'env' => $envLabel,
+                'env' => $stripeMode,
+                'amount' => $intent->amount / 100,
+                'currency' => $intent->currency,
             ]);
 
         } catch (\Exception $e) {
-            // Log seguro del error
             Log::error('Stripe Error', [
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),

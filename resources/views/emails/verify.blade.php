@@ -74,7 +74,7 @@
     <div class="content">
         <h1>¡Hola {{ $user->name }}!</h1>
         <p>Gracias por registrarte en <strong>Decora10</strong>. Para completar tu registro y acceder a nuestra tienda de muebles y decoración, verifica tu correo haciendo clic en el botón a continuación:</p>
-        <a href="http://localhost:5173/" class="btn">Verificar mi correo</a>
+        <a href="https://www.decora10.com/" class="btn">Verificar mi correo</a>
         <p>Si no creaste esta cuenta, puedes ignorar este mensaje.</p>
     </div>
     <div class="footer">
