@@ -14,9 +14,10 @@ return [
     |
     */
     'stripe' => [
-        'key' => env('STRIPE_KEY'),
-        'secret' => env('STRIPE_SECRET'),
+        'key' => trim(env('STRIPE_KEY', ''), '"'),
+        'secret' => trim(env('STRIPE_SECRET', ''), '"'),
     ],
+
 
 
     'postmark' => [
