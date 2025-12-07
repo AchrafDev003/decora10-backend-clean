@@ -31,25 +31,34 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
+        // ⚡ Si no existe usuario o la contraseña es incorrecta
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json(['error' => 'Credenciales incorrectas'], 401);
         }
 
+        // ⚡ Si el email no está verificado
+        if (is_null($user->email_verified_at)) {
+            return response()->json(['error' => 'Email no verificado'], 403);
+        }
+
+        // ⚡ Crear token solo si email verificado
         $token = $user->createToken('API Token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login exitoso',
             'user' => [
-                'id'    => $user->id,
-                'name'  => $user->name,
-                'email' => $user->email,
-                'role'  => $user->role,
-                'photo' => $user->photo,
+                'id'       => $user->id,
+                'name'     => $user->name,
+                'email'    => $user->email,
+                'role'     => $user->role,
+                'photo'    => $user->photo,
                 'provider' => $user->provider,
             ],
             'token' => $token
         ], 200);
     }
+
+
 
     // ============================
     // 🔓 LOGOUT
