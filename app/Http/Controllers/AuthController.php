@@ -36,10 +36,10 @@ class AuthController extends Controller
             return response()->json(['error' => 'Credenciales incorrectas'], 401);
         }
 
-        // ⚡ Si el email no está verificado
-        if (is_null($user->email_verified_at)) {
+        if (!$user->hasVerifiedEmail()) {
             return response()->json(['error' => 'Email no verificado'], 403);
         }
+
 
         // ⚡ Crear token solo si email verificado
         $token = $user->createToken('API Token')->plainTextToken;
