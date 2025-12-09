@@ -50,7 +50,7 @@ class DashboardController extends Controller
             DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
             DB::raw('SUM(total) as total_sales')
         )
-            ->where('status', 'completed')
+            ->where('status', 'entregado')
             ->groupBy('month')
             ->orderBy('month')
             ->get();
