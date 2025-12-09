@@ -57,7 +57,8 @@ class ProductController extends Controller
         $perPage = $request->input('per_page', 16);
         $page = $request->input('page', 1);
 
-        $query = Product::with(['category', 'images']);
+        $query = Product::with(['category', 'images'])
+            ->where('quantity', '>', 0); // <- SOLO productos con stock mayor a 1;
 
         // 🔎 Búsqueda
         if ($request->filled('search')) {
@@ -257,6 +258,7 @@ class ProductController extends Controller
         $page = $request->input('page', 1);
 
         $query = Product::with(['category', 'images'])
+            ->where('quantity', '>', 0) // <- SOLO productos con stock mayor a 1
             ->whereHas('category', function ($q) {
                 $q->where('id', '!=', 76); // Excluir categoría Colchonería
             });
@@ -307,6 +309,7 @@ class ProductController extends Controller
         $page = $request->input('page', 1);
 
         $query = Product::with(['category', 'images'])
+            ->where('quantity', '>', 0) // <- SOLO productos con stock mayor a 1
             ->where('category_id', 76);
 
         // 🔎 Filtro opcional por marca o palabra clave
@@ -348,16 +351,18 @@ class ProductController extends Controller
     public function relatedByFirstWord($id)
     {
         // 1. Obtener producto actual
-        $producto = Product::findOrFail($id);
+        $producto = Product::where('id', $id)
+            ->where('quantity', '>', 0)
+            ->firstOrFail();  // devuelve el modelo directamente
 
-        // 2. Obtener la primera palabra del nombre
         $firstWord = explode(' ', trim($producto->name))[0];
+
 
         // 3. Buscar productos que contengan esa palabra en el nombre (excepto el actual)
         $related = Product::with(['category', 'images'])
             ->where('id', '!=', $producto->id)
             ->where('name', 'LIKE', "%{$firstWord}%")
-            ->take(6) // Limitar cantidad
+            ->take(8) // Limitar cantidad
             ->get();
 
         return response()->json([
@@ -462,6 +467,72 @@ class ProductController extends Controller
     public function search(Request $request)
     {
         // Construir la query principal con relaciones
+        $query = Product::with(['category', 'images'])
+            ->where('quantity', '>', 0);
+
+        // -------------------------------
+        // Filtro por búsqueda de texto
+        // -------------------------------
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'LIKE', "%{$search}%")
+                    ->orWhere('description', 'LIKE', "%{$search}%");
+            });
+        }
+
+        // -------------------------------
+        // Filtro por categoría
+        // -------------------------------
+        if ($request->filled('category_id')) {
+            $categoryId = (int) $request->category_id; // casteo a entero por seguridad
+            $query->where('category_id', $categoryId);
+        }
+
+        // -------------------------------
+        // Filtro por productos en promoción
+        // -------------------------------
+        if ($request->filled('is_promo')) {
+            $isPromo = filter_var($request->is_promo, FILTER_VALIDATE_BOOLEAN);
+            $query->where('is_promo', $isPromo);
+        }
+
+        // -------------------------------
+        // Ordenación
+        // -------------------------------
+        if ($request->filled('sort')) {
+            match ($request->sort) {
+                'precio_asc'  => $query->orderBy('price', 'asc'),
+                'precio_desc' => $query->orderBy('price', 'desc'),
+                'nombre_asc'  => $query->orderBy('name', 'asc'),
+                'nombre_desc' => $query->orderBy('name', 'desc'),
+                default       => $query->latest(),
+            };
+        } else {
+            $query->latest();
+        }
+
+        // -------------------------------
+        // Paginación
+        // -------------------------------
+        $perPage = 60; // productos por página
+        $products = $query->paginate($perPage);
+
+        // -------------------------------
+        // Devolver colección con meta completo
+        // -------------------------------
+        return ProductResource::collection($products)->additional([
+            'meta' => [
+                'total'        => $products->total(),
+                'current_page' => $products->currentPage(),
+                'last_page'    => $products->lastPage(),
+                'per_page'     => $products->perPage(),
+            ]
+        ]);
+    }
+    public function searchAdmin(Request $request)
+    {
+        // Construir la query principal con relaciones
         $query = Product::with(['category', 'images']);
 
         // -------------------------------
@@ -524,6 +595,38 @@ class ProductController extends Controller
             ]
         ]);
     }
+
+    public function quickSearch(Request $request)
+    {
+        $query = $request->query('query');
+
+        if (!$query || strlen($query) < 2) {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+
+        $products = Product::select('id', 'name', 'price', 'quantity')
+            ->with(['images' => function($q) {
+                $q->select('id', 'product_id', 'image_path');
+            }])
+            ->where('name', 'LIKE', "%{$query}%")
+            ->limit(10)
+            ->get()
+            ->map(function ($p) {
+                return [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'price' => $p->price,
+                    'quantity' => $p->quantity,
+                    'image' => $p->images->first()->image_path ?? null,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $products
+        ]);
+    }
+
 
 
 }

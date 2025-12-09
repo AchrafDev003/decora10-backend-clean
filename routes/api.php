@@ -97,6 +97,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->get('/me', [AuthController::class, 'me']);
     Route::middleware('auth:sanctum')->patch('/users/{id}/photo', [UserController::class, 'updateUserPhoto']);
     // Productos generales (todas las categorías excepto Colchonería)
+    Route::get('/products/quick-search', [ProductController::class, 'quickSearch']);
     Route::get('/products/general', [ProductController::class, 'getPaginatedWithoutColchoneria']);
 
 // Productos exclusivos de Colchonería
@@ -124,6 +125,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/products/featured', [ProductController::class, 'getFeaturedByCategory']);
     Route::get('/products/colchoneria', [ProductController::class, 'getColchoneriaHighlights']);
     Route::get('products/search', [ProductController::class, 'search']);
+
+
     Route::apiResource('products', ProductController::class)->only(['index','show']);
     Route::apiResource('categories', CategoryController::class)->only(['index','show']);
 
