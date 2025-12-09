@@ -125,7 +125,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/products/featured', [ProductController::class, 'getFeaturedByCategory']);
     Route::get('/products/colchoneria', [ProductController::class, 'getColchoneriaHighlights']);
     Route::get('products/search', [ProductController::class, 'search']);
-
+    Route::get('/coupons/active', [CouponController::class, 'active']);
 
     Route::apiResource('products', ProductController::class)->only(['index','show']);
     Route::apiResource('categories', CategoryController::class)->only(['index','show']);
