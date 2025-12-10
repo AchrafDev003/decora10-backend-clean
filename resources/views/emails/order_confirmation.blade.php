@@ -32,7 +32,7 @@
 
 <div class="footer">
     <p>Este correo ha sido enviado automáticamente por <strong>Decora10</strong>.</p>
-    <p>Contacto: <a href="mailto:soporte@decora10.com">soporte@decora10.com</a></p>
+    <p>Contacto: <a href="mailto:decora10.colchon10@gmail.com">soporte@decora10.com</a></p>
 </div>
 
 </body>

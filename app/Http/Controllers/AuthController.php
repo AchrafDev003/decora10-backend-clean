@@ -118,7 +118,8 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'message' => 'Usuario creado correctamente. Verifica tu correo electrónico.',
+            'message' => 'Usuario creado correctamente. Hemos enviado un correo de verificación; si no lo encuentras, revisa también la carpeta de spam o correo no deseado.',
+
             'user' => [
                 'id'    => $user->id,
                 'name'  => $user->name,
