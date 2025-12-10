@@ -21,12 +21,14 @@
             overflow: hidden;
         }
         .header {
-            background-color: #000000; /* negro */
+            background-color: #000000;
             padding: 20px;
             text-align: center;
         }
         .header img {
             max-width: 150px;
+            display: block;
+            margin: 0 auto;
         }
         .content {
             padding: 30px;
@@ -46,8 +48,8 @@
         .btn {
             display: inline-block;
             padding: 12px 25px;
-            background-color: #ff6600; /* naranja */
-            color: #ffffff; /* blanco */
+            background-color: #ff6600;
+            color: #ffffff;
             text-decoration: none;
             font-size: 16px;
             border-radius: 30px;
@@ -69,14 +71,21 @@
 <body>
 <div class="container">
     <div class="header">
-        <img src="{{ asset('storage/DECORA10.png') }}" alt="Decora10" style="color: #735c0f">
+        <img src="https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244228/blade-resources/pnxucxa7bokorzmiudqr.png"
+             alt="Decora10">
     </div>
+
     <div class="content">
         <h1>¡Hola {{ $user->name }}!</h1>
         <p>Gracias por registrarte en <strong>Decora10</strong>. Para completar tu registro y acceder a nuestra tienda de muebles y decoración, verifica tu correo haciendo clic en el botón a continuación:</p>
-        <a href="https://www.decora10.com/" class="btn">Verificar mi correo</a>
+
+        <a href="{{ env('FRONTEND_URL') }}/verify-email?token={{ $user->email_verification_token }}" class="btn">
+            Verificar mi correo
+        </a>
+
         <p>Si no creaste esta cuenta, puedes ignorar este mensaje.</p>
     </div>
+
     <div class="footer">
         &copy; {{ date('Y') }} Decora10. Todos los derechos reservados.
     </div>
