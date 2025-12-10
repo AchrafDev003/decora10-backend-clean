@@ -42,7 +42,7 @@ Route::get('/clear', function() {
 Route::get('/test-mail', function () {
     try {
         Mail::raw('Correo de prueba SendGrid Laravel', function($message) {
-            $message->to('achraf003@gmail.com')->subject('Prueba SendGrid Laravel');
+            $message->to('achraf003@gmail.com')->subject('Prueba gmail Laravel');
         });
 
         return response()->json(['success' => true, 'message' => 'Correo enviado correctamente.']);
