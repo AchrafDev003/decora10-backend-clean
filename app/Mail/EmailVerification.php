@@ -20,8 +20,7 @@ class EmailVerification extends Mailable
 
     public function build()
     {
-        $url = config('app.frontend_url') . "/verify-email?token={$this->user->email_verification_token}";
-
+        $url = config('app.url') . "/api/v1/verify-email/{$this->user->email_verification_token}";
 
         return $this->view('emails.verify')
             ->subject('Verifica tu cuenta en Decora10')
