@@ -69,12 +69,13 @@
 <body>
 <div class="container">
     <div class="header">
-        <img src="{{ asset('storage/DECORA10.png') }}" alt="Decora10" style="color: #735c0f">
+        <img src="https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244228/blade-resources/pnxucxa7bokorzmiudqr.png"
+             alt="Decora10">
     </div>
     <div class="content">
         <h1>¡Hola {{ $user->name }}!</h1>
         <p>Gracias por registrarte en <strong>Decora10</strong>. Para completar tu registro y acceder a nuestra tienda de muebles y decoración, verifica tu correo haciendo clic en el botón a continuación:</p>
-        <a href="https://www.decora10.com/" class="btn">Verificar mi correo</a>
+        <a href="{{ $url }}" class="btn">Verificar mi correo</a>
         <p>Si no creaste esta cuenta, puedes ignorar este mensaje.</p>
     </div>
     <div class="footer">
