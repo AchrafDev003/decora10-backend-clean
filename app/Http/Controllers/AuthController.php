@@ -82,10 +82,12 @@ class AuthController extends Controller
             'photo'    => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ]);
 
+        // Guardar la foto si existe
         $photoPath = $request->hasFile('photo')
             ? $request->file('photo')->store('photos/users', 'public')
             : null;
 
+        // Crear el usuario
         $user = User::create([
             'name'  => $request->name,
             'email' => $request->email,
@@ -97,10 +99,22 @@ class AuthController extends Controller
             'email_verification_token' => Str::random(60),
         ]);
 
+        // Enviar correo de verificación
         try {
             Mail::to($user->email)->send(new EmailVerification($user));
         } catch (\Exception $e) {
             Log::error('Error enviando correo de verificación: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Usuario creado, pero no se pudo enviar el correo de verificación.',
+                'user' => [
+                    'id'    => $user->id,
+                    'name'  => $user->name,
+                    'email' => $user->email,
+                    'role'  => $user->role,
+                    'photo' => $user->photo,
+                ]
+            ], 201);
         }
 
         return response()->json([
@@ -114,6 +128,7 @@ class AuthController extends Controller
             ]
         ], 201);
     }
+
 
     // ============================
     // 👤 USUARIO LOGUEADO
