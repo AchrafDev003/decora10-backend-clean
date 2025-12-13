@@ -3,15 +3,17 @@
 namespace App\Http\Controllers\Webhook;
 
 use App\Http\Controllers\Controller;
+use App\Mail\OrderConfirmation;
 use App\Models\Order;
 use App\Models\OrderStatusHistory;
 use App\Models\Payment;
 use App\Models\Cart;
 use App\Models\Coupon;
-use App\Jobs\GenerateOrderPdfJob;
-use App\Jobs\SendOrderConfirmationEmailJob;
+
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Stripe\Webhook;
 use function Laravel\Prompts\alert;
 
@@ -124,11 +126,41 @@ class StripeWebhookController extends Controller
 
             // 6. Jobs AFTER COMMIT
             DB::afterCommit(function () use ($order) {
-                GenerateOrderPdfJob::dispatch($order);
-                SendOrderConfirmationEmailJob::dispatch($order);
+                $this->generateOrderPDF($order);
             });
         });
     }
+    private function generateOrderPDF($order)
+    {
+        // URLs desde Cloudinary
+        $logoHeader    = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244414/blade-resources/header.png';
+        $firmaSrc      = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244411/blade-resources/Decor_10.png';
+        $telefonoIcono = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244416/blade-resources/telefono.png';
+        $dec10         = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244408/blade-resources/dec10.jpg'; // si lo necesitas en algún sitio extra
+
+        // Convertir a base64 para que dompdf lo renderice
+        $logoHeader    = 'data:image/png;base64,' . base64_encode(file_get_contents($logoHeader));
+        $firmaSrc      = 'data:image/png;base64,' . base64_encode(file_get_contents($firmaSrc));
+        $telefonoIcono = 'data:image/png;base64,' . base64_encode(file_get_contents($telefonoIcono));
+
+
+        $pdf = Pdf::loadView('pdf.order', [
+            'order'        => $order->load('orderItems.product', 'user'),
+            'logoHeader'   => $logoHeader,
+            'firmaSrc'     => $firmaSrc,
+            'telefonoIcono'=> $telefonoIcono,
+
+        ]);
+
+        $pdfPath = storage_path("app/public/invoices/order_{$order->id}.pdf");
+        $pdf->save($pdfPath);
+
+        Mail::to($order->user->email)
+            ->bcc(['hrafartist@gmail.com', 'decora10.colchon10@gmail.com'])
+            ->send(new OrderConfirmation($order, $pdfPath));
+
+    }
+
 
     protected function handlePaymentFailed($paymentIntent): void
     {
