@@ -97,7 +97,6 @@
             border-top: 2px solid #27ae60;
             color: #555;
         }
-
     </style>
 </head>
 <body>
@@ -111,14 +110,12 @@
     @endif
 </div>
 
-
 <div class="invoice-header">
-    <h1 style="text-align:center;color:#27ae60;margin-bottom:5px;">FACTURA</h1>
+    <h1>FACTURA</h1>
     <p style="text-align:center;margin:0;font-size:14px;">
         Nº: {{ $order->tracking_number }} — {{ $order->created_at->format('d/m/Y') }}
     </p>
 </div>
-
 
 {{-- Información Cliente / Empresa --}}
 <table style="width:100%;margin-bottom:20px;border-collapse:collapse;">
@@ -142,8 +139,6 @@
         </td>
     </tr>
 </table>
-
-
 
 {{-- Productos --}}
 <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
@@ -170,7 +165,7 @@
     <table>
         <tr>
             <th>Subtotal:</th>
-            <td>€{{ number_format($order->total + $order->discount, 2) }}</td>
+            <td>€{{ number_format($order->subtotal, 2) }}</td>
         </tr>
         @if($order->discount > 0)
             <tr>
@@ -179,8 +174,17 @@
             </tr>
         @endif
         <tr>
+            <th>Coste de envío:</th>
+            <td>€{{ number_format($order->shipping_cost, 2) }}</td>
+        </tr>
+        <tr>
             <th style="color:#27ae60;">Total Final:</th>
             <td><strong>€{{ number_format($order->total, 2) }}</strong></td>
+        </tr>
+        <tr>
+            <td colspan="2" style="text-align:right;font-size:12px;color:#555;">
+                IVA incluido
+            </td>
         </tr>
     </table>
 </div>

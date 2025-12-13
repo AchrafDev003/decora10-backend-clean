@@ -11,19 +11,18 @@ class Order extends Model
 {
     use HasFactory;
 
-
     protected $fillable = [
         'user_id',
         'address_id',
         'subtotal',
         'tax',
         'tax_rate',
+        'shipping_cost',
         'total',
         'discount',
         'promo_code',
         'coupon_type',
         'shipping_address',
-        'shipping_cost',
         'payment_method',
         'status',
         'tracking_number',
@@ -39,6 +38,7 @@ class Order extends Model
     protected $casts = [
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
+        'shipping_cost' => 'decimal:2',
         'total' => 'decimal:2',
         'discount' => 'decimal:2',
         'estimated_delivery_date' => 'datetime',
@@ -46,7 +46,9 @@ class Order extends Model
         'updated_at' => 'datetime',
     ];
 
-
+    // ===========================
+    // 💰 ACCESORES DE CÁLCULO
+    // ===========================
 
     public function getTotalAfterDiscountAttribute()
     {
@@ -62,9 +64,6 @@ class Order extends Model
     {
         return $this->total - $this->total_cost;
     }
-
-
-
 
     // ===========================
     // 🔗 RELACIONES
@@ -107,11 +106,9 @@ class Order extends Model
         return $this->hasOne(Payment::class);
     }
 
-
     // ===========================
     // 💡 ACCESORES / MUTADORES
     // ===========================
-
 
     public function getLastStatusAttribute()
     {
@@ -121,10 +118,7 @@ class Order extends Model
     public function getTimelineAttribute()
     {
         return $this->statusHistory->map(function ($item) {
-            $date = $item->cambiado_en;
-            if ($date && !($date instanceof Carbon)) {
-                $date = Carbon::parse($date);
-            }
+            $date = $item->cambiado_en instanceof Carbon ? $item->cambiado_en : Carbon::parse($item->cambiado_en);
             return [
                 'status' => $item->status,
                 'nota' => $item->nota,
@@ -144,10 +138,8 @@ class Order extends Model
                 $order->order_code = 'DECORA10-' . now()->format('Ymd') . '-' . strtoupper(Str::random(5));
             }
 
-            // Si no hay descuento explícito, inicializa a 0
-            if (is_null($order->discount)) {
-                $order->discount = 0;
-            }
+            $order->discount = $order->discount ?? 0;
+            $order->shipping_cost = $order->shipping_cost ?? 0;
         });
     }
 
@@ -158,51 +150,49 @@ class Order extends Model
     public function toArray()
     {
         return [
-            'id'                   => $this->id,
-            'order_code'           => $this->order_code,
-            'user'                 => [
-                'id'    => $this->user->id,
-                'name'  => $this->user->name,
+            'id' => $this->id,
+            'order_code' => $this->order_code,
+            'user' => [
+                'id' => $this->user->id,
+                'name' => $this->user->name,
                 'email' => $this->user->email,
             ],
-            'address'              => [
-                'id'       => $this->address->id ?? null,
-                'line1'    => $this->address->line1 ?? '',
-                'city'     => $this->address->city ?? '',
-                'country'  => $this->address->country ?? '',
-                'mobile1'  => $this->address->mobile1 ?? '',
-                'mobile2'  => $this->address->mobile2 ?? '',
+            'address' => [
+                'id' => $this->address->id ?? null,
+                'line1' => $this->address->line1 ?? '',
+                'city' => $this->address->city ?? '',
+                'country' => $this->address->country ?? '',
+                'mobile1' => $this->address->mobile1 ?? '',
+                'mobile2' => $this->address->mobile2 ?? '',
             ],
-            'items'                => ($this->orderItems ?? collect())->map(function ($item) {
-                return [
-                    'id'           => $item->id,
-                    'product_id'   => $item->product_id,
-                    'product_name' => $item->product->name ?? 'Producto eliminado',
-                    'quantity'     => $item->quantity,
-                    'price'        => $item->price,
-                    'subtotal'     => $item->quantity * $item->price,
-                ];
-            }),
-            'status'               => $this->status,
-            'last_status'          => $this->last_status,
-            'total'                => $this->total,
-            'discount'             => $this->discount,
+            'items' => $this->orderItems->map(fn($item) => [
+                'id' => $item->id,
+                'product_id' => $item->product_id,
+                'product_name' => $item->product->name ?? 'Producto eliminado',
+                'quantity' => $item->quantity,
+                'price' => $item->price,
+                'subtotal' => $item->quantity * $item->price,
+            ]),
+            'status' => $this->status,
+            'last_status' => $this->last_status,
+            'subtotal' => $this->subtotal,
+            'shipping_cost' => $this->shipping_cost,
+            'total' => $this->total,
+            'discount' => $this->discount,
             'total_after_discount' => $this->total_after_discount,
-            'promo_code'           => $this->promo_code,
-            'shipping_address'     => $this->shipping_address,
-            'payment_method'       => $this->payment_method,
-            'tracking_number'      => $this->tracking_number,
-            'courier'              => $this->courier,
+            'promo_code' => $this->promo_code,
+            'coupon_type' => $this->coupon_type,
+            'shipping_address' => $this->shipping_address,
+            'payment_method' => $this->payment_method,
+            'tracking_number' => $this->tracking_number,
+            'courier' => $this->courier,
             'estimated_delivery_date' => $this->estimated_delivery_date?->format('Y-m-d'),
             'tax' => $this->tax,
             'tax_rate' => $this->tax_rate,
-            'subtotal' => $this->subtotal,
-            'coupon_type' => $this->coupon_type,
             'profit' => $this->profit,
-
-            'created_at'           => $this->created_at?->format('Y-m-d H:i:s'),
-            'updated_at'           => $this->updated_at?->format('Y-m-d H:i:s'),
-            'timeline'             => $this->timeline,
+            'created_at' => $this->created_at?->format('Y-m-d H:i:s'),
+            'updated_at' => $this->updated_at?->format('Y-m-d H:i:s'),
+            'timeline' => $this->timeline,
         ];
     }
 }

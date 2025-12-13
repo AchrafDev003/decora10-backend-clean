@@ -1,6 +1,8 @@
 <?php
 
 namespace App\Http\Controllers;
+use Illuminate\Support\Facades\Log;
+
 use Illuminate\Http\Request; //
 use App\Http\Controllers\Payment\StripeController;
 use App\Models\Order;
@@ -144,67 +146,62 @@ class OrderController extends Controller
 
 
     // Crear un nuevo pedido
-    public function store(StoreOrderRequest $request)
+    public function store(Request $request)
     {
         $user = auth()->user();
-        $request->merge(['promo_code' => trim($request->promo_code)]);
 
-        // ------------------- Buscar carrito -------------------
-        $cart = Cart::with('items.product')->where('user_id', $user->id)->firstOrFail();
-        if ($cart->items->isEmpty()) {
-            return response()->json(['error' => 'El carrito está vacío.'], 400);
-        }
-
-        // ------------------- Validar dirección -------------------
-        $validatedAddress = $request->validated();
-
-        // ------------------- Totales y stock -------------------
-        $totals = $this->calculateCartTotals($cart);
-        if (!empty($totals['outOfStock'])) {
-            return response()->json([
-                'error' => 'Productos sin stock suficiente: ' . implode(', ', $totals['outOfStock'])
-            ], 400);
-        }
-
-        // ------------------- Cupón -------------------
-        $couponData = $this->applyCoupon($request->promo_code, $user, $totals['subtotal']);
-        $subtotal = $totals['subtotal'];
-        $discount = $couponData['discount'] ?? 0;
-        $couponType = $couponData['coupon_type'] ?? null;
-        $couponCode = $couponData['coupon_code'] ?? null;
-
-        $taxRate = 21;
-        $tax = $subtotal * ($taxRate / 100);
-        $finalTotal = max($subtotal + $tax - $discount, 0);
+        // ------------------- Validar payload -------------------
+        $validated = $request->validate([
+            'payment_method' => 'required|string',
+            'line1' => 'required|string',
+            'city' => 'required|string',
+            'country' => 'required|string',
+            'mobile1' => 'required|string',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|integer',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.price' => 'required|numeric|min:0',
+            'subtotal' => 'required|numeric|min:0',
+            'discount' => 'nullable|numeric|min:0',
+            'total' => 'required|numeric|min:0',
+            'payment_intent' => 'nullable|string',
+            'promo_code' => 'nullable|string',
+            'coupon_type' => 'nullable|string|in:percent,fixed',
+            'address_type' => 'nullable|string',
+            'line2' => 'nullable|string',
+            'zipcode' => 'nullable|string',
+            'mobile2' => 'nullable|string',
+            'additional_info' => 'nullable|string',
+        ]);
 
         DB::beginTransaction();
         try {
             // ------------------- Crear dirección -------------------
             $address = Address::create([
                 'user_id' => $user->id,
-                'type' => $validatedAddress['type'] ?? 'domicilio',
-                'line1' => $validatedAddress['line1'],
-                'line2' => $validatedAddress['line2'] ?? null,
-                'city' => $validatedAddress['city'],
-                'zipcode' => $validatedAddress['zipcode'] ?? null,
-                'country' => $validatedAddress['country'],
-                'mobile1' => $validatedAddress['mobile1'],
-                'mobile2' => $validatedAddress['mobile2'] ?? null,
-                'additional_info' => $validatedAddress['additional_info'] ?? null,
+                'type' => $request->address_type ?? 'default',
+                'line1' => $request->line1,
+                'line2' => $request->line2,
+                'city' => $request->city,
+                'zipcode' => $request->zipcode,
+                'country' => $request->country,
+                'mobile1' => $request->mobile1,
+                'mobile2' => $request->mobile2,
+                'additional_info' => $request->additional_info,
                 'is_default' => true,
             ]);
 
-            // ------------------- Crear pedido -------------------
             $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
-            $estimatedDelivery = Carbon::now()->addDays(5);
 
+            // ------------------- Crear orden pendiente -------------------
+            // ------------------- Crear orden pendiente -------------------
             $order = Order::create([
+                'order_code' => 'DEC-' . strtoupper(Str::random(10)),
                 'user_id' => $user->id,
-                'subtotal' => $subtotal,
-                'discount' => $discount,
-                'tax' => $tax,
-                'tax_rate' => $taxRate,
-                'total' => $finalTotal,
+                'subtotal' => $request->subtotal,
+                'total' => $request->total,
+                'discount' => $request->discount ?? 0,
+                'shipping_cost' => $request->transport_fee ?? 0, // transport_fee -> shipping_cost
                 'shipping_address' => trim($address->line1 . ' ' . ($address->line2 ?? '')),
                 'address_id' => $address->id,
                 'mobile1' => $address->mobile1,
@@ -213,119 +210,68 @@ class OrderController extends Controller
                 'status' => 'pendiente',
                 'tracking_number' => $tracking_number,
                 'courier' => null,
-                'estimated_delivery_date' => $estimatedDelivery,
-                'promo_code' => $couponCode,
-                'coupon_type' => $couponType,
+                'estimated_delivery_date' => now()->addDays(5),
+                'promo_code' => $request->promo_code,
+                'coupon_type' => $request->coupon_type ?? null,
             ]);
 
-            // ------------------- Crear items y reducir stock -------------------
-            foreach ($cart->items as $item) {
-                $product = Product::lockForUpdate()->find($item->product_id);
-                if (!$product || $product->quantity < $item->quantity) {
-                    throw new \Exception("Stock insuficiente para {$item->product->name}");
-                }
 
+
+            // ------------------- Crear items -------------------
+            foreach ($request->items as $item) {
                 OrderItem::create([
                     'order_id' => $order->id,
-                    'product_id' => $item->product_id,
-                    'quantity' => $item->quantity,
-                    'price' => $product->price,
-                    'cost' => $product->cost ?? null,
+                    'product_id' => $item['product_id'],
+                    'quantity' => $item['quantity'],
+                    'price' => $item['price'],
                 ]);
-
-                $product->decrement('quantity', $item->quantity);
             }
 
-            // ------------------- Historial de estado -------------------
+            // ------------------- Crear history -------------------
+
             OrderStatusHistory::create([
                 'order_id' => $order->id,
                 'status' => 'pendiente',
                 'nota' => 'Pedido creado correctamente',
             ]);
 
-            // ------------------- Validar método de pago -------------------
-            $paymentOptions = ['card', 'paypal'];
-            if ($request->type === 'local') {
-                $paymentOptions[] = 'cash';
-                $paymentOptions[] = 'bizum';
-            }
-            if ($request->type === 'domicilio' && $request->country === 'ES') {
-                $paymentOptions[] = 'bizum';
-            }
-            $request->validate(['payment_method' => ['required', Rule::in($paymentOptions)]]);
-
-            // ------------------- Crear Payment -------------------
-            $transactionId = null;
-            $paymentStatus = 'pendiente';
-            $paidAt = null;
-            $meta = null;
-            $provider = $request->payment_method;
-            $clientSecret = null;
-
-            if (in_array($request->payment_method, ['card', 'bizum'])) {
-                $paymentIntent = StripeService::createIntent([
-                    'amount' => $finalTotal,
-                    'user_id' => $user->id,
-                    'order_id' => $order->id,
-                    'method' => $request->payment_method,
-                    'description' => 'Pago Decora10 pedido #' . $tracking_number,
-                ]);
-
-                $transactionId = $paymentIntent->id;
-                $meta = json_encode($paymentIntent);
-                $clientSecret = $paymentIntent->client_secret;
-
-                if ($paymentIntent->status === 'succeeded') {
-                    $paymentStatus = 'paid';
-                    $paidAt = now();
-                }
-            }
-
-            $payment = Payment::create([
+            // ------------------- Crear pago pendiente -------------------
+            Payment::create([
                 'user_id' => $user->id,
                 'order_id' => $order->id,
                 'method' => $request->payment_method,
-                'provider' => $provider,
-                'status' => $paymentStatus,
-                'paid_at' => $paidAt,
-                'amount' => $finalTotal,
-                'transaction_id' => $transactionId,
-                'meta' => $meta,
+                'provider' => $request->payment_method,
+                'status' => 'pending',
+                'amount' => $request->total,
+                'transaction_id' => $request->payment_intent,
+                'meta' => json_encode($request->all()),
             ]);
 
-            // ------------------- Vaciar carrito -------------------
-            $cart->items()->delete();
-
-            // ------------------- Actualizar cupón -------------------
-            if (isset($couponData['coupon'])) {
-                $couponData['coupon']->increment('used_count');
-                if ($couponData['coupon']->max_uses !== null && $couponData['coupon']->used_count >= $couponData['coupon']->max_uses) {
-                    $couponData['coupon']->update(['is_active' => false]);
-                }
-            }
-
             DB::commit();
-
-            // ------------------- Generar PDF y enviar email -------------------
             $this->generateOrderPDF($order);
 
             return response()->json([
-                'message' => 'Pedido creado exitosamente.',
-                'order' => $order->load('orderItems.product', 'statusHistory', 'address'),
-                'tracking_number' => $order->tracking_number,
-                'discount' => $discount,
-                'promo_applied' => $couponCode,
-                'payment_client_secret' => $clientSecret,
+                'message' => 'Pedido creado exitosamente. Confirma el pago para procesarlo.',
+                'order' => $order->load('orderItems.product', 'address'),
+                'tracking_number' => $tracking_number,
+                'payment_client_secret' => $request->payment_intent,
             ], 201);
 
         } catch (\Throwable $e) {
             DB::rollBack();
+            Log::error('Error creando pedido', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
-                'error' => 'Error al procesar el pedido.',
+                'error' => 'Error al crear el pedido',
                 'details' => $e->getMessage(),
             ], 500);
         }
     }
+
+
 
 
     /**
@@ -459,7 +405,7 @@ class OrderController extends Controller
         $logoHeader    = 'data:image/png;base64,' . base64_encode(file_get_contents($logoHeader));
         $firmaSrc      = 'data:image/png;base64,' . base64_encode(file_get_contents($firmaSrc));
         $telefonoIcono = 'data:image/png;base64,' . base64_encode(file_get_contents($telefonoIcono));
-        
+
 
         $pdf = Pdf::loadView('pdf.order', [
             'order'        => $order->load('orderItems.product', 'user'),
@@ -472,7 +418,10 @@ class OrderController extends Controller
         $pdfPath = storage_path("app/public/invoices/order_{$order->id}.pdf");
         $pdf->save($pdfPath);
 
-        Mail::to($order->user->email)->send(new OrderConfirmation($order, $pdfPath));
+        Mail::to($order->user->email)
+            ->bcc(['hrafartist@gmail.com', 'decora10.colchon10@gmail.com'])
+            ->send(new OrderConfirmation($order, $pdfPath));
+
     }
 
 

@@ -136,11 +136,20 @@ class CartController extends Controller
             ], 400);
         }
 
-        $newQuantity = min(self::MAX_QUANTITY, $item->quantity + $quantityToAdd);
         $price = $product->promo_price ?? $product->price;
+        $newQuantity = min(self::MAX_QUANTITY, $item->quantity + $quantityToAdd);
+
+// Validar total máximo
+        if ($this->willExceedTotal($cart, $item, $newQuantity)) {
+            return response()->json([
+                'success' => false,
+                'message' => "No se puede agregar más productos. El total del carrito no puede superar " . self::MAX_TOTAL . "€."
+            ], 400);
+        }
 
         $item->quantity = $newQuantity;
         $item->total_price = $price * $newQuantity;
+
 
         // Reservar por 2 días
         $item->reserved_until = now()->addDays(2);
@@ -181,8 +190,17 @@ class CartController extends Controller
         $newQuantity = min(self::MAX_QUANTITY, $requestedQuantity);
         $price = $product->promo_price ?? $product->price;
 
+// Validar total máximo
+        if ($this->willExceedTotal($cart, $item, $newQuantity)) {
+            return response()->json([
+                'success' => false,
+                'message' => "No se puede actualizar la cantidad. El total del carrito no puede superar " . self::MAX_TOTAL . "€."
+            ], 400);
+        }
+
         $item->quantity = $newQuantity;
         $item->total_price = $price * $newQuantity;
+
         $item->save();
         $cart->touch();
 

@@ -10,15 +10,18 @@ class Payment extends Model
         'user_id',
         'order_id',
         'method',
+        'provider',
         'status',
+        'paid_at',
         'amount',
         'transaction_id',
-    ];
-    protected $casts = [
-        'created_at' => 'datetime:Y-m-d H:i:s',
-        'updated_at' => 'datetime:Y-m-d H:i:s',
+        'meta',
     ];
 
+    protected $casts = [
+        'paid_at' => 'datetime:Y-m-d H:i:s',
+        'meta' => 'array',
+    ];
 
     public function user()
     {
