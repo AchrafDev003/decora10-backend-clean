@@ -151,7 +151,8 @@ class OrderController extends Controller
         $user = auth()->user();
 
         $validated = $request->validate([
-            'payment_method' => 'required|string',
+            'payment_method' => 'required|in:card,paypal,cash,bizum',
+
             'line1' => 'required|string',
             'city' => 'required|string',
             'country' => 'required|string',
@@ -211,6 +212,8 @@ class OrderController extends Controller
 
             // Orden
             $order = Order::create([
+                'order_code' => 'DEC-' . strtoupper(Str::random(10)),
+
                 'user_id' => $user->id,
                 'address_id' => $address->id,
 
