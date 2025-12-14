@@ -103,11 +103,9 @@
 
 {{-- Logo --}}
 <div style="text-align:center;margin-bottom:20px;">
-    @if($logoHeader)
-        <img src="{{ $logoHeader }}" style="width:400px;height:auto;object-fit:contain;">
-    @else
+
         <h2>Decora10</h2>
-    @endif
+
 </div>
 
 <div class="invoice-header">

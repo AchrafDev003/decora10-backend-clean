@@ -1,0 +1,36 @@
+{
+    "name": "decora10-backend",
+    "services": [
+        {
+            "name": "app",
+            "type": "web",
+            "build": {
+                "builder": "metal",
+                "buildCommand": [
+                    "install-php-extensions gd",
+                    "composer install --no-dev --optimize-autoloader",
+                    "php artisan config:clear",
+                    "php artisan cache:clear",
+                    "php artisan route:clear",
+                    "php artisan view:clear",
+                    "php artisan optimize"
+                ]
+            },
+            "deploy": {
+                "startCommand": "php artisan serve --host=0.0.0.0 --port=$PORT"
+            },
+            "environment": {
+                "APP_ENV": "production",
+                "APP_DEBUG": "false",
+                "APP_KEY": "base64:pWZyRaByx43lqHJpYG821wSs6HjCwktsE6zcVaceo/8=",
+                "DB_CONNECTION": "mysql",
+                "DB_HOST": "hopper.proxy.rlwy.net",
+                "DB_PORT": "19168",
+                "DB_DATABASE": "muebles",
+                "DB_USERNAME": "root",
+                "DB_PASSWORD": "XFFCLLkfUfsOvBLAWLQhDknOtFbbkQOC"
+            }
+
+        }
+    ]
+}
