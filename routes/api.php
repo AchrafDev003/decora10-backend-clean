@@ -22,7 +22,7 @@ use App\Http\Controllers\FakeCheckoutController;
 use App\Http\Controllers\CouponController;
 use App\Http\Middleware\CheckUserRole;
 use App\Http\Controllers\Payment\StripeController;
-use App\Http\Controllers\Webhook\StripeWebhookController;
+use App\Http\Controllers\StripeWebhookController;
 
 
 /*

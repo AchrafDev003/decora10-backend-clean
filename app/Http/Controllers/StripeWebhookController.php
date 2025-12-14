@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Webhook;
+namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Mail\OrderConfirmation;
