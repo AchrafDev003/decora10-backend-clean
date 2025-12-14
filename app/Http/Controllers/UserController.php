@@ -60,11 +60,7 @@ class UserController extends Controller
     // ============================
     // 🔹 PUT /api/v1/users/{id}
     // ============================
-    use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
-    use Cloudinary\Api\Upload\UploadApi;
-    use Illuminate\Support\Str;
-    use Illuminate\Validation\Rule;
-    use Illuminate\Support\Facades\Hash;
+
 
     public function update(Request $request, $id)
     {
