@@ -77,7 +77,7 @@ Route::get('/test-perm', function () {
 */
 Route::prefix('v1')->group(function () {
     // Webhook Stripe (no requiere auth)
-    Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle']);
+    Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle']);
 
     // ==============================
     // Public resources
