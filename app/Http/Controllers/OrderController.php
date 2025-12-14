@@ -150,28 +150,23 @@ class OrderController extends Controller
     {
         $user = auth()->user();
 
+        // ------------------- Validar payload -------------------
         $validated = $request->validate([
-            'payment_method' => 'required|in:card,paypal,cash,bizum',
-
+            'payment_method' => 'required|string',
             'line1' => 'required|string',
             'city' => 'required|string',
             'country' => 'required|string',
             'mobile1' => 'required|string',
-
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|integer',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.price' => 'required|numeric|min:0',
-
             'subtotal' => 'required|numeric|min:0',
             'discount' => 'nullable|numeric|min:0',
-            'transport_fee' => 'nullable|numeric|min:0',
-
+            'total' => 'required|numeric|min:0',
             'payment_intent' => 'nullable|string',
-
             'promo_code' => 'nullable|string',
-            'coupon_type' => 'nullable|in:percent,fixed',
-
+            'coupon_type' => 'nullable|string|in:percent,fixed',
             'address_type' => 'nullable|string',
             'line2' => 'nullable|string',
             'zipcode' => 'nullable|string',
@@ -180,9 +175,8 @@ class OrderController extends Controller
         ]);
 
         DB::beginTransaction();
-
         try {
-            // Dirección
+            // ------------------- Crear dirección -------------------
             $address = Address::create([
                 'user_id' => $user->id,
                 'type' => $request->address_type ?? 'default',
@@ -197,48 +191,34 @@ class OrderController extends Controller
                 'is_default' => true,
             ]);
 
-            $trackingNumber = 'DEC-ORD-' . strtoupper(Str::random(8));
-            $taxRate = 21;
+            $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
+            $estimatedDelivery = Carbon::now()->addDays(5);
 
-            $subtotal = $request->subtotal;
-            $discount = $request->discount ?? 0;
-            $shipping = $request->transport_fee ?? 0;
-
-            $baseAmount = max($subtotal - $discount + $shipping, 0);
-
-            // IVA incluido
-            $tax = round($baseAmount - ($baseAmount / 1.21), 2);
-            $total = round($baseAmount, 2);
-
-            // Orden
+            // ------------------- Crear orden pendiente -------------------
+            // ------------------- Crear orden pendiente -------------------
             $order = Order::create([
                 'order_code' => 'DEC-' . strtoupper(Str::random(10)),
-
                 'user_id' => $user->id,
-                'address_id' => $address->id,
-
-                'subtotal' => $subtotal,
-                'discount' => $discount,
-                'shipping_cost' => $shipping,
-
-                'tax_rate' => $taxRate,
-                'tax' => $tax,
-                'total' => $total,
-
+                'subtotal' => $request->subtotal,
+                'total' => $request->total,
+                'discount' => $request->discount ?? 0,
+                'shipping_cost' => $request->transport_fee ?? 0, // transport_fee -> shipping_cost
                 'shipping_address' => trim($address->line1 . ' ' . ($address->line2 ?? '')),
+                'address_id' => $address->id,
                 'mobile1' => $address->mobile1,
                 'mobile2' => $address->mobile2,
-
                 'payment_method' => $request->payment_method,
                 'status' => 'pendiente',
-
-                'tracking_number' => $trackingNumber,
-                'estimated_delivery_date' => now()->addDays(5),
-
+                'tracking_number' => $tracking_number,
+                'courier' => null,
+                'estimated_delivery_date' => $estimatedDelivery,
                 'promo_code' => $request->promo_code,
-                'coupon_type' => $request->coupon_type,
+                'coupon_type' => $request->coupon_type ?? null,
             ]);
 
+
+
+            // ------------------- Crear items -------------------
             foreach ($request->items as $item) {
                 OrderItem::create([
                     'order_id' => $order->id,
@@ -248,43 +228,49 @@ class OrderController extends Controller
                 ]);
             }
 
+            // ------------------- Crear history -------------------
+
             OrderStatusHistory::create([
                 'order_id' => $order->id,
                 'status' => 'pendiente',
-                'nota' => 'Pedido creado',
+                'nota' => 'Pedido creado correctamente',
             ]);
 
+            // ------------------- Crear pago pendiente -------------------
             Payment::create([
                 'user_id' => $user->id,
                 'order_id' => $order->id,
                 'method' => $request->payment_method,
-                'provider' => 'stripe',
+                'provider' => $request->payment_method,
                 'status' => 'pending',
-                'amount' => $total,
-                'reference' => $request->payment_intent,
+                'amount' => $request->total,
+                'transaction_id' => $request->payment_intent,
+                'meta' => json_encode($request->all()),
             ]);
 
             DB::commit();
             $this->generateOrderPDF($order);
+
             return response()->json([
-                'message' => 'Pedido creado correctamente',
-                'order_id' => $order->id,
-                'tracking_number' => $trackingNumber,
+                'message' => 'Pedido creado exitosamente. Confirma el pago para procesarlo.',
+                'order' => $order->load('orderItems.product', 'address'),
+                'tracking_number' => $tracking_number,
+                'payment_client_secret' => $request->payment_intent,
             ], 201);
 
         } catch (\Throwable $e) {
             DB::rollBack();
-
             Log::error('Error creando pedido', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'error' => 'Error al crear el pedido',
+                'details' => $e->getMessage(),
             ], 500);
         }
     }
-
 
 
 
