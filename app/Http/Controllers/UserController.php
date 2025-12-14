@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+use Cloudinary\Api\Upload\UploadApi;
 
 class UserController extends Controller
 {
@@ -57,6 +59,12 @@ class UserController extends Controller
     // ============================
     // 🔹 PUT /api/v1/users/{id}
     // ============================
+    use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+    use Cloudinary\Api\Upload\UploadApi;
+    use Illuminate\Support\Str;
+    use Illuminate\Validation\Rule;
+    use Illuminate\Support\Facades\Hash;
+
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
@@ -77,8 +85,8 @@ class UserController extends Controller
             'password' => 'nullable|string|min:6',
             'role'     => 'sometimes|required|in:admin,dueno,cliente,cliente_fiel',
             'photo'    => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
-            'provider'    => 'nullable|string|max:50',   // Nuevo
-            'provider_id' => 'nullable|string|max:255',  // Nuevo
+            'provider'    => 'nullable|string|max:50',
+            'provider_id' => 'nullable|string|max:255',
         ]);
 
         // ⚠️ Evitar que usuarios con provider=google cambien su email o contraseña
@@ -99,23 +107,53 @@ class UserController extends Controller
             unset($validated['password']);
         }
 
-        // Manejar la foto
+        // Manejar la foto con Cloudinary
         if ($request->hasFile('photo') && $request->file('photo')->isValid()) {
-            if ($user->photo && Storage::disk('public')->exists($user->photo)) {
-                Storage::disk('public')->delete($user->photo);
+            try {
+                // 1️⃣ Eliminar imagen anterior de Cloudinary si existe
+                if ($user->photo) {
+                    $path = parse_url($user->photo, PHP_URL_PATH);
+                    $filename = pathinfo($path, PATHINFO_FILENAME);
+                    (new UploadApi())->destroy("users/{$filename}");
+                }
+
+                // 2️⃣ Crear public_id exacto: "nombre-id"
+                $slugName = Str::slug($user->name);
+                $publicId = "{$slugName}-{$user->id}";
+
+                // 3️⃣ Subir nueva foto
+                $upload = Cloudinary::upload(
+                    $request->file('photo')->getRealPath(),
+                    [
+                        'folder' => 'users',
+                        'public_id' => $publicId,
+                        'overwrite' => true,
+                        'resource_type' => 'image',
+                        'transformation' => [
+                            'width' => 300,
+                            'height' => 300,
+                            'crop' => 'fill',
+                            'gravity' => 'face',
+                        ],
+                    ]
+                );
+
+                $validated['photo'] = $upload->getSecurePath();
+
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al subir la imagen',
+                    'error' => $e->getMessage()
+                ], 500);
             }
-
-            $nameSlug = str_replace(' ', '_', strtolower($user->name));
-            $extension = $request->file('photo')->getClientOriginalExtension();
-            $filename = $nameSlug . '-' . $user->id . '.' . $extension;
-
-            $validated['photo'] = $request->file('photo')->storeAs('photos/users', $filename, 'public');
         }
 
         $user->update($validated);
 
         return response()->json($user, 200);
     }
+
 
     // ============================
     // 🔹 PATCH /users/{id}/photo
@@ -128,22 +166,45 @@ class UserController extends Controller
 
         $user = User::findOrFail($id);
 
-        if (auth()->id() !== $user->id && !in_array(auth()->user()->role, ['admin', 'dueno'])) {
+        if (
+            auth()->id() !== $user->id &&
+            !in_array(auth()->user()->role, ['admin', 'dueno'])
+        ) {
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
-        if ($request->hasFile('photo') && $request->file('photo')->isValid()) {
-            if ($user->photo && Storage::disk('public')->exists($user->photo)) {
-                Storage::disk('public')->delete($user->photo);
+        try {
+
+            // 🔹 Eliminar imagen anterior (si existe)
+            if ($user->photo) {
+                $path = parse_url($user->photo, PHP_URL_PATH);
+                $filename = pathinfo($path, PATHINFO_FILENAME);
+                (new UploadApi())->destroy("users/{$filename}");
             }
 
-            $nameSlug = str_replace(' ', '_', strtolower($user->name));
-            $extension = $request->file('photo')->getClientOriginalExtension();
-            $filename = $nameSlug . '-' . $user->id . '.' . $extension;
+            // 🔹 Nombre EXACTO como tú quieres
+            $slugName = Str::slug($user->name); // achraf
+            $publicId = "{$slugName}-{$user->id}"; // achraf-28
 
-            $path = $request->file('photo')->storeAs('photos/users', $filename, 'public');
+            // 🔹 Subida a Cloudinary
+            $upload = Cloudinary::upload(
+                $request->file('photo')->getRealPath(),
+                [
+                    'folder' => 'users',
+                    'public_id' => $publicId,
+                    'overwrite' => true,
+                    'resource_type' => 'image',
+                    'transformation' => [
+                        'width' => 300,
+                        'height' => 300,
+                        'crop' => 'fill',
+                        'gravity' => 'face',
+                    ],
+                ]
+            );
 
-            $user->photo = $path;
+            // 🔹 Guardar URL final
+            $user->photo = $upload->getSecurePath();
             $user->save();
 
             return response()->json([
@@ -151,12 +212,14 @@ class UserController extends Controller
                 'photo' => $user->photo,
                 'message' => 'Foto actualizada correctamente'
             ]);
-        }
 
-        return response()->json([
-            'success' => false,
-            'message' => 'No se subió ninguna foto válida'
-        ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al subir la imagen',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     // ============================

@@ -397,7 +397,7 @@ class OrderController extends Controller
     private function generateOrderPDF($order)
     {
         // URLs desde Cloudinary
-        $logoHeader    = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244414/blade-resources/header.png';
+        $logoHeader    = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764235771/decora10-test/DECORA10.png';
         $firmaSrc      = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244411/blade-resources/Decor_10.png';
         $telefonoIcono = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244416/blade-resources/telefono.png';
         $dec10         = 'https://res.cloudinary.com/dvo9uq7io/image/upload/v1764244408/blade-resources/dec10.jpg'; // si lo necesitas en algún sitio extra
