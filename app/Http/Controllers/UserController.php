@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary; // ✅ Import correcto
-use Cloudinary\Api\Upload\UploadApi;
+use Cloudinary\Cloudinary;
+
 use Illuminate\Support\Str;
 use App\Models\User;
 
@@ -66,91 +66,38 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
 
-        // Solo admin/dueno pueden editar a otros; usuario normal solo a sí mismo
-        if (!in_array(auth()->user()->role, ['admin', 'dueno']) && auth()->id() !== $user->id) {
-            return response()->json(['message' => 'No autorizado'], 403);
-        }
-
-        // Nadie que no sea admin puede tocar perfiles admin
-        if ($user->role === 'admin' && auth()->user()->role !== 'admin') {
-            return response()->json(['message' => 'No autorizado para cambiar perfil admin'], 403);
-        }
-
         $validated = $request->validate([
-            'name'     => 'sometimes|required|string|max:100',
-            'email'    => ['sometimes', 'required', 'email', Rule::unique('users')->ignore($user->id)],
-            'password' => 'nullable|string|min:6',
-            'role'     => 'sometimes|required|in:admin,dueno,cliente,cliente_fiel',
-            'photo'    => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
-            'provider'    => 'nullable|string|max:50',
-            'provider_id' => 'nullable|string|max:255',
+            'name'  => 'sometimes|required|string|max:100',
+            'email' => ['sometimes', 'required', 'email', Rule::unique('users')->ignore($user->id)],
+            'role'  => 'sometimes|required|in:admin,dueno,cliente,cliente_fiel',
+            'photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
-        // ⚠️ Evitar que usuarios con provider=google cambien su email o contraseña
-        if ($user->provider === 'google') {
-            unset($validated['email']);
-            unset($validated['password']);
-        }
-
-        // No permitir que no-admin suba a admin
+        // Evitar asignar rol admin si no eres admin
         if (isset($validated['role']) && auth()->user()->role !== 'admin' && $validated['role'] === 'admin') {
             return response()->json(['message' => 'No autorizado para asignar rol admin'], 403);
         }
 
-        // Hashear la contraseña si viene
-        if (!empty($validated['password'])) {
-            $validated['password'] = Hash::make($validated['password']);
-        } else {
-            unset($validated['password']);
-        }
-
-        // Manejar la foto con Cloudinary
+        // Subir foto a Cloudinary
         if ($request->hasFile('photo') && $request->file('photo')->isValid()) {
-            try {
-                // 1️⃣ Eliminar imagen anterior de Cloudinary si existe
-                if ($user->photo) {
-                    $path = parse_url($user->photo, PHP_URL_PATH);
-                    $filename = pathinfo($path, PATHINFO_FILENAME);
-                    (new UploadApi())->destroy("users/{$filename}");
-                }
+            $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
 
-                // 2️⃣ Crear public_id exacto: "nombre-id"
-                $slugName = Str::slug($user->name);
-                $publicId = "{$slugName}-{$user->id}";
+            $slugName = Str::slug($user->name);
+            $publicId = "{$slugName}-{$user->id}";
 
-                // 3️⃣ Subir nueva foto
-                $upload = Cloudinary::upload(
-                    $request->file('photo')->getRealPath(),
-                    [
-                        'folder' => 'users',
-                        'public_id' => $publicId,
-                        'overwrite' => true,
-                        'resource_type' => 'image',
-                        'transformation' => [
-                            'width' => 300,
-                            'height' => 300,
-                            'crop' => 'fill',
-                            'gravity' => 'face',
-                        ],
-                    ]
-                );
+            $result = $cloudinary->uploadApi()->upload($request->file('photo')->getRealPath(), [
+                'folder' => 'users',
+                'public_id' => $publicId,
+                'resource_type' => 'image',
+            ]);
 
-                $validated['photo'] = $upload->getSecurePath();
-
-            } catch (\Exception $e) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error al subir la imagen',
-                    'error' => $e->getMessage()
-                ], 500);
-            }
+            $validated['photo'] = $result['secure_url'] ?? null;
         }
 
         $user->update($validated);
 
         return response()->json($user, 200);
     }
-
 
     // ============================
     // 🔹 PATCH /users/{id}/photo
@@ -163,6 +110,7 @@ class UserController extends Controller
 
         $user = User::findOrFail($id);
 
+        // Permisos: solo el propio usuario, admin o dueño
         if (
             auth()->id() !== $user->id &&
             !in_array(auth()->user()->role, ['admin', 'dueno'])
@@ -171,37 +119,34 @@ class UserController extends Controller
         }
 
         try {
+            $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
 
-            // 🔹 Eliminar imagen anterior (si existe)
-            if ($user->photo) {
+            // 🔹 Eliminar foto anterior si existe en Cloudinary
+            if ($user->photo && str_contains($user->photo, 'res.cloudinary.com')) {
                 $path = parse_url($user->photo, PHP_URL_PATH);
                 $filename = pathinfo($path, PATHINFO_FILENAME);
-                (new UploadApi())->destroy("users/{$filename}");
+
+                if ($filename) {
+                    (new UploadApi())->destroy("users/{$filename}");
+                }
             }
 
-            // 🔹 Nombre EXACTO como tú quieres
-            $slugName = Str::slug($user->name); // achraf
-            $publicId = "{$slugName}-{$user->id}"; // achraf-28
+            // 🔹 Nombre exacto para Cloudinary
+            $slugName = Str::slug($user->name);
+            $publicId = "{$slugName}-{$user->id}";
 
             // 🔹 Subida a Cloudinary
-            $upload = Cloudinary::upload(
+            $result = $cloudinary->uploadApi()->upload(
                 $request->file('photo')->getRealPath(),
                 [
                     'folder' => 'users',
                     'public_id' => $publicId,
                     'overwrite' => true,
                     'resource_type' => 'image',
-                    'transformation' => [
-                        'width' => 300,
-                        'height' => 300,
-                        'crop' => 'fill',
-                        'gravity' => 'face',
-                    ],
                 ]
             );
 
-            // 🔹 Guardar URL final
-            $user->photo = $upload->getSecurePath();
+            $user->photo = $result['secure_url'] ?? null;
             $user->save();
 
             return response()->json([

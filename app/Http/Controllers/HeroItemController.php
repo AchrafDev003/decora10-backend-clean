@@ -6,6 +6,7 @@ use App\Models\HeroItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
+use Cloudinary\Cloudinary;
 
 class HeroItemController extends Controller
 {
@@ -43,6 +44,9 @@ class HeroItemController extends Controller
     // ==========================
     // 🔹 CREAR HERO ITEM
     // ==========================
+    // ==========================
+    // 🔹 CREAR HERO ITEM
+    // ==========================
     public function store(Request $request)
     {
         $data = $request->validate([
@@ -50,18 +54,31 @@ class HeroItemController extends Controller
             'subtitle' => 'nullable|string|max:255',
             'descripcion' => 'nullable|string',
             'link' => 'nullable|string|max:255',
-            'media' => 'nullable|file|mimes:jpg,jpeg,png,gif,mp4,webm,ogg|max:102400', // 100MB max
+            'media' => 'nullable|file|mimes:jpg,jpeg,png,gif,mp4,webm,ogg|max:102400', // 100MB
             'order' => 'nullable|integer',
             'status' => 'nullable|in:draft,published',
         ]);
 
         if ($request->hasFile('media')) {
-            $file = $request->file('media');
-            $filename = Str::random(20) . '.' . $file->getClientOriginalExtension();
-            $file->storeAs('hero', $filename, 'public');
+            $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
 
-            $data['media_filename'] = $filename;
-            $data['media_type'] = $file->getClientMimeType() ?? 'image';
+            $file = $request->file('media');
+            $ext = $file->getClientOriginalExtension();
+            $type = Str::startsWith($file->getMimeType(), 'video') ? 'video' : 'image';
+            $publicId = "hero/" . Str::random(20);
+
+            $result = $cloudinary->uploadApi()->upload(
+                $file->getRealPath(),
+                [
+                    'folder' => 'hero',
+                    'public_id' => $publicId,
+                    'resource_type' => $type,
+                    'overwrite' => true,
+                ]
+            );
+
+            $data['media_filename'] = $result['secure_url'] ?? null;
+            $data['media_type'] = $type;
         }
 
         $item = HeroItem::create($data);
@@ -87,22 +104,38 @@ class HeroItemController extends Controller
         ]);
 
         if ($request->hasFile('media')) {
+            $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
+
+            // Eliminar archivo anterior de Cloudinary si existe
             if ($item->media_filename) {
-                Storage::disk('public')->delete('hero/' . $item->media_filename);
+                $path = parse_url($item->media_filename, PHP_URL_PATH);
+                $filename = pathinfo($path, PATHINFO_FILENAME);
+                (new UploadApi())->destroy("hero/{$filename}", ['resource_type' => $item->media_type]);
             }
 
             $file = $request->file('media');
-            $filename = Str::random(20) . '.' . $file->getClientOriginalExtension();
-            $file->storeAs('hero', $filename, 'public');
+            $type = Str::startsWith($file->getMimeType(), 'video') ? 'video' : 'image';
+            $publicId = "hero/" . Str::random(20);
 
-            $data['media_filename'] = $filename;
-            $data['media_type'] = $file->getClientMimeType() ?? 'image';
+            $result = $cloudinary->uploadApi()->upload(
+                $file->getRealPath(),
+                [
+                    'folder' => 'hero',
+                    'public_id' => $publicId,
+                    'resource_type' => $type,
+                    'overwrite' => true,
+                ]
+            );
+
+            $data['media_filename'] = $result['secure_url'] ?? null;
+            $data['media_type'] = $type;
         }
 
         $item->update($data);
 
         return response()->json($item);
     }
+
 
     // ==========================
     // 🔹 ELIMINAR HERO ITEM

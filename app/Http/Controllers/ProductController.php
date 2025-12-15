@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use Illuminate\Http\Request;
+use Cloudinary\Cloudinary;
 
 class ProductController extends Controller
 {
@@ -177,8 +178,14 @@ class ProductController extends Controller
     // -----------------------------
     // --- Crear producto ---
     // -----------------------------
+    use Cloudinary\Cloudinary;
+    use Cloudinary\Api\Upload\UploadApi;
+    use Illuminate\Support\Str;
+
     public function store(StoreProductRequest $request)
     {
+        $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
+
         // Intentaremos crear el producto hasta que tengamos un slug válido
         $maxAttempts = 5; // Evita bucles infinitos
         $attempt = 0;
@@ -203,13 +210,28 @@ class ProductController extends Controller
                     'category_id'   => $request->category_id,
                 ]);
 
-                // Guardar imágenes si las hay
+                // Subir imágenes a Cloudinary si las hay
                 if ($request->hasFile('images')) {
                     $position = 0;
+
                     foreach ($request->file('images') as $file) {
-                        $path = $file->store('images/products', 'public');
+                        $slugName = Str::slug($product->name);
+                        $publicId = "products/{$slugName}-" . uniqid();
+
+                        $result = $cloudinary->uploadApi()->upload(
+                            $file->getRealPath(),
+                            [
+                                'folder' => 'products',
+                                'public_id' => $publicId,
+                                'overwrite' => true,
+                                'resource_type' => 'image',
+                            ]
+                        );
+
+                        $url = $result['secure_url'] ?? null;
+
                         $product->images()->create([
-                            'image_path' => $path,
+                            'image_path' => $url,
                             'position'   => $position++,
                         ]);
                     }
@@ -375,6 +397,10 @@ class ProductController extends Controller
     // -----------------------------
     // --- Actualizar producto ---
     // -----------------------------
+
+
+
+
     public function update(UpdateProductRequest $request, $id)
     {
         $product = Product::with('images')->findOrFail($id);
@@ -392,15 +418,23 @@ class ProductController extends Controller
             'category_id'   => $request->category_id,
         ]);
 
+        $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
+
         // Eliminar imágenes seleccionadas
         if ($request->filled('delete_images')) {
             $idsToDelete = $request->input('delete_images');
             $imagesToDelete = $product->images()->whereIn('id', $idsToDelete)->get();
 
             foreach ($imagesToDelete as $img) {
-                if (Storage::disk('public')->exists($img->image_path)) {
-                    Storage::disk('public')->delete($img->image_path);
+                // Si la imagen está en Cloudinary, borrarla
+                if ($img->image_path && str_contains($img->image_path, 'res.cloudinary.com')) {
+                    $path = parse_url($img->image_path, PHP_URL_PATH);
+                    $filename = pathinfo($path, PATHINFO_FILENAME);
+                    if ($filename) {
+                        (new UploadApi())->destroy("products/{$filename}");
+                    }
                 }
+
                 $img->delete();
             }
         }
@@ -408,10 +442,25 @@ class ProductController extends Controller
         // Agregar nuevas imágenes
         if ($request->hasFile('images')) {
             $nextPosition = $product->images()->max('position') + 1 ?? 0;
+
             foreach ($request->file('images') as $file) {
-                $path = $file->store('images/products', 'public');
+                $slugName = Str::slug($product->name);
+                $publicId = "products/{$slugName}-" . uniqid();
+
+                $result = $cloudinary->uploadApi()->upload(
+                    $file->getRealPath(),
+                    [
+                        'folder' => 'products',
+                        'public_id' => $publicId,
+                        'overwrite' => true,
+                        'resource_type' => 'image',
+                    ]
+                );
+
+                $url = $result['secure_url'] ?? null;
+
                 $product->images()->create([
-                    'image_path' => $path,
+                    'image_path' => $url,
                     'position'   => $nextPosition++,
                 ]);
             }
@@ -422,6 +471,7 @@ class ProductController extends Controller
             'product' => new ProductResource($product->load('images')),
         ]);
     }
+
 
     // -----------------------------
     // --- Eliminar producto ---

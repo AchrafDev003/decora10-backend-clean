@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use App\Http\Middleware;
+use Cloudinary\Cloudinary;
 
 class CategoryController extends Controller
 {
@@ -29,6 +30,7 @@ class CategoryController extends Controller
     }
 
     // ➕ Crear categoría (admin o dueño)
+    // ✏️ Crear categoría
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -47,10 +49,23 @@ class CategoryController extends Controller
             'description' => $request->description,
         ];
 
-        // Si hay imagen, guardarla en storage y guardar el path
         if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('categories', 'public');
-            $categoryData['image'] = $imagePath;
+            $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
+
+            $slugName = Str::slug($request->name);
+            $publicId = "categories/{$slugName}-" . uniqid();
+
+            $result = $cloudinary->uploadApi()->upload(
+                $request->file('image')->getRealPath(),
+                [
+                    'folder' => 'categories',
+                    'public_id' => $publicId,
+                    'overwrite' => true,
+                    'resource_type' => 'image',
+                ]
+            );
+
+            $categoryData['image'] = $result['secure_url'] ?? null;
         }
 
         $category = Category::create($categoryData);
@@ -61,7 +76,7 @@ class CategoryController extends Controller
         ], 201);
     }
 
-// ✏️ Actualizar categoría (admin o dueño)
+// ✏️ Actualizar categoría
     public function update(Request $request, $id): JsonResponse
     {
         $category = Category::findOrFail($id);
@@ -80,10 +95,30 @@ class CategoryController extends Controller
         $category->slug = Str::slug($request->name);
         $category->description = $request->description;
 
-        // Guardar nueva imagen si se sube
         if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('categories', 'public');
-            $category->image = $imagePath;
+            $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
+
+            // Eliminar imagen anterior si existe
+            if ($category->image) {
+                $path = parse_url($category->image, PHP_URL_PATH);
+                $filename = pathinfo($path, PATHINFO_FILENAME);
+                (new UploadApi())->destroy("categories/{$filename}");
+            }
+
+            $slugName = Str::slug($request->name);
+            $publicId = "categories/{$slugName}-" . uniqid();
+
+            $result = $cloudinary->uploadApi()->upload(
+                $request->file('image')->getRealPath(),
+                [
+                    'folder' => 'categories',
+                    'public_id' => $publicId,
+                    'overwrite' => true,
+                    'resource_type' => 'image',
+                ]
+            );
+
+            $category->image = $result['secure_url'] ?? null;
         }
 
         $category->save();
@@ -93,7 +128,6 @@ class CategoryController extends Controller
             'category' => new CategoryResource($category)
         ]);
     }
-
 
     // 🗑️ Eliminar categoría
     public function destroy($id): JsonResponse

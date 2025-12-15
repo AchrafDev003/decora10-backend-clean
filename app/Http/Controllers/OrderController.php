@@ -152,7 +152,7 @@ class OrderController extends Controller
 
         // ------------------- Validar payload -------------------
         $validated = $request->validate([
-            'payment_method' => 'required|string',
+            'payment_method' => 'required|string|in:card,paypal,cash,bizum',
             'line1' => 'required|string',
             'city' => 'required|string',
             'country' => 'required|string',
@@ -181,42 +181,41 @@ class OrderController extends Controller
                 'user_id' => $user->id,
                 'type' => $request->address_type ?? 'default',
                 'line1' => $request->line1,
-                'line2' => $request->line2,
+                'line2' => $request->line2 ?? null,
                 'city' => $request->city,
-                'zipcode' => $request->zipcode,
+                'zipcode' => $request->zipcode ?? null,
                 'country' => $request->country,
                 'mobile1' => $request->mobile1,
-                'mobile2' => $request->mobile2,
-                'additional_info' => $request->additional_info,
-                'is_default' => true,
+                'mobile2' => $request->mobile2 ?? null,
+                'additional_info' => $request->additional_info ?? '',
+                'is_default' => 1,
             ]);
 
+            // ------------------- Crear orden -------------------
             $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
             $estimatedDelivery = Carbon::now()->addDays(5);
 
-            // ------------------- Crear orden pendiente -------------------
-            // ------------------- Crear orden pendiente -------------------
             $order = Order::create([
                 'order_code' => 'DEC-' . strtoupper(Str::random(10)),
                 'user_id' => $user->id,
-                'subtotal' => $request->subtotal,
-                'total' => $request->total,
-                'discount' => $request->discount ?? 0,
-                'shipping_cost' => $request->transport_fee ?? 0, // transport_fee -> shipping_cost
+                'subtotal' => $request->subtotal ?? 0.00,
+                'total' => $request->total ?? 0.00,
+                'discount' => $request->discount ?? 0.00,
+                'shipping_cost' => $request->transport_fee ?? 0.00,
+                'tax' => 0.00,
+                'tax_rate' => null,
                 'shipping_address' => trim($address->line1 . ' ' . ($address->line2 ?? '')),
                 'address_id' => $address->id,
                 'mobile1' => $address->mobile1,
-                'mobile2' => $address->mobile2,
+                'mobile2' => $address->mobile2 ?? null,
                 'payment_method' => $request->payment_method,
                 'status' => 'pendiente',
                 'tracking_number' => $tracking_number,
                 'courier' => null,
                 'estimated_delivery_date' => $estimatedDelivery,
-                'promo_code' => $request->promo_code,
-                'coupon_type' => $request->coupon_type ?? null,
+                'promo_code' => $request->promo_code ?? null,
+                'coupon_type' => in_array($request->coupon_type, ['percent','fixed']) ? $request->coupon_type : null,
             ]);
-
-
 
             // ------------------- Crear items -------------------
             foreach ($request->items as $item) {
@@ -225,23 +224,23 @@ class OrderController extends Controller
                     'product_id' => $item['product_id'],
                     'quantity' => $item['quantity'],
                     'price' => $item['price'],
+                    'cost' => $item['cost'] ?? null,
                 ]);
             }
 
-            // ------------------- Crear history -------------------
-
+            // ------------------- Crear historial -------------------
             OrderStatusHistory::create([
                 'order_id' => $order->id,
                 'status' => 'pendiente',
                 'nota' => 'Pedido creado correctamente',
             ]);
 
-            // ------------------- Crear pago pendiente -------------------
+            // ------------------- Crear pago -------------------
             Payment::create([
                 'user_id' => $user->id,
                 'order_id' => $order->id,
                 'method' => $request->payment_method,
-                'provider' => $request->payment_method,
+                'provider' => 'stripe',
                 'status' => 'pending',
                 'amount' => $request->total,
                 'transaction_id' => $request->payment_intent,
@@ -249,6 +248,8 @@ class OrderController extends Controller
             ]);
 
             DB::commit();
+
+            // Opcional: generar PDF
             $this->generateOrderPDF($order);
 
             return response()->json([
@@ -263,6 +264,7 @@ class OrderController extends Controller
             Log::error('Error creando pedido', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+                'payload' => $request->all(),
             ]);
 
             return response()->json([
