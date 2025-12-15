@@ -7,9 +7,8 @@
             "build": {
                 "builder": "metal",
                 "buildCommand": [
-                    "install-php-extensions gd mbstring dom xml zip bcmath pdo_mysql",
+                    "install-php-extensions gd",
                     "composer install --no-dev --optimize-autoloader",
-                    "php artisan key:generate --force",
                     "php artisan config:clear",
                     "php artisan cache:clear",
                     "php artisan route:clear",
@@ -31,6 +30,7 @@
                 "DB_USERNAME": "root",
                 "DB_PASSWORD": "XFFCLLkfUfsOvBLAWLQhDknOtFbbkQOC"
             }
+
         }
     ]
 }
