@@ -38,6 +38,12 @@ Route::get('/clear', function() {
     Artisan::call('cache:clear');
     return 'Cache cleared';
 });
+Route::get('/_debug/php', function () {
+    return response()->json([
+        'gd' => extension_loaded('gd'),
+        'extensions' => get_loaded_extensions(),
+    ]);
+});
 
 
 Route::get('/test-mail', function () {
