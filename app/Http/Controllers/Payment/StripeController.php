@@ -12,6 +12,7 @@ class StripeController extends Controller
 {
     public function createIntent(Request $request)
     {
+        // Validación de entrada
         $request->validate([
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|string',
@@ -25,7 +26,7 @@ class StripeController extends Controller
             $userId = $request->input('user_id');
             $orderId = $request->input('order_id', null);
 
-            // ⚡ Stripe mode: test o live
+            // ⚡ Modo Stripe
             $stripeMode = env('STRIPE_MODE', 'live');
             $secretKey = $stripeMode === 'test'
                 ? trim(env('STRIPE_SECRET_TEST'), '"')
@@ -33,8 +34,9 @@ class StripeController extends Controller
 
             Stripe::setApiKey($secretKey);
 
-            // Métodos válidos según modo
+            // Métodos de pago válidos
             $validMethods = $stripeMode === 'test' ? ['card', 'sofort'] : ['card', 'bizum'];
+
             if ($stripeMode === 'test' && $paymentMethod === 'bizum') {
                 $paymentMethod = 'sofort';
             }
@@ -57,6 +59,16 @@ class StripeController extends Controller
                     'method' => $paymentMethod,
                     'env' => $stripeMode,
                 ],
+            ]);
+
+            // Log para depuración en producción
+            Log::info('Stripe PaymentIntent creado', [
+                'id' => $intent->id,
+                'clientSecret' => $intent->client_secret,
+                'method' => $paymentMethod,
+                'amount' => $intent->amount,
+                'currency' => $intent->currency,
+                'env' => $stripeMode,
             ]);
 
             return response()->json([
