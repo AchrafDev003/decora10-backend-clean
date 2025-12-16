@@ -1,8 +1,20 @@
-[phases.setup]
-nixPkgs = [
-    "php82",
-    "php82Extensions.gd",
-    "php82Extensions.mbstring",
-    "php82Extensions.zip",
-    "php82Extensions.dom"
+[phpruntime]
+version = "8.2"
+server = "fpm"  # ⚠️ Usar FPM en lugar del built-in HTTP server
+
+[phpruntime.extensions]
+# Instalar GD y otras extensiones necesarias
+gd = true
+pdo_mysql = true
+sodium = true
+opcache = true
+
+[build]
+# Comando que corre durante el build
+install = [
+    "install-php-extensions gd pdo_mysql sodium opcache"
 ]
+
+[deploy]
+# Comando que corre al iniciar el contenedor
+start = "php-fpm"

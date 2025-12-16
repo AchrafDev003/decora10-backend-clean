@@ -7,9 +7,7 @@
             "build": {
                 "builder": "metal",
                 "buildCommand": [
-                    "install-php-extensions gd",
-                    "mkdir -p /usr/local/etc/php/conf.d",
-                    "cp /conf.d/99-gd.ini /usr/local/etc/php/conf.d/99-gd.ini",
+                    "install-php-extensions gd pdo_mysql sodium opcache",
                     "composer install --no-dev --optimize-autoloader",
                     "php artisan config:clear",
                     "php artisan cache:clear",
@@ -17,10 +15,9 @@
                     "php artisan view:clear",
                     "php artisan optimize"
                 ]
-
             },
             "deploy": {
-                "startCommand": "php artisan serve --host=0.0.0.0 --port=$PORT"
+                "startCommand": "php-fpm -R"
             },
             "environment": {
                 "APP_ENV": "production",
@@ -33,7 +30,6 @@
                 "DB_USERNAME": "root",
                 "DB_PASSWORD": "XFFCLLkfUfsOvBLAWLQhDknOtFbbkQOC"
             }
-
         }
     ]
 }

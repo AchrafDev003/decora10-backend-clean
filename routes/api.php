@@ -39,8 +39,14 @@ Route::get('/clear', function() {
     return 'Cache cleared';
 });
 Route::get('/_debug/php', function () {
-    return phpinfo();
+    return response()->json([
+        'gd' => extension_loaded('gd'),
+        'extensions' => get_loaded_extensions(),
+        'ini_loaded' => php_ini_loaded_file(),
+        'ini_scanned' => php_ini_scanned_files(),
+    ]);
 });
+
 
 
 
