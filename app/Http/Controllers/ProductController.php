@@ -178,9 +178,7 @@ class ProductController extends Controller
     // -----------------------------
     // --- Crear producto ---
     // -----------------------------
-    use Cloudinary\Cloudinary;
-    use Cloudinary\Api\Upload\UploadApi;
-    use Illuminate\Support\Str;
+
 
     public function store(StoreProductRequest $request)
     {
