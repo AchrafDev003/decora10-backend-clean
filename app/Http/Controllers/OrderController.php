@@ -150,6 +150,7 @@ class OrderController extends Controller
     {
         $user = auth()->user();
 
+        // ------------------- Validar payload -------------------
         $validated = $request->validate([
             'payment_method' => 'required|string|in:card,paypal,cash,bizum',
             'line1' => 'required|string',
@@ -175,6 +176,7 @@ class OrderController extends Controller
 
         DB::beginTransaction();
         try {
+            // ------------------- Crear dirección -------------------
             $address = Address::create([
                 'user_id' => $user->id,
                 'type' => $request->address_type ?? 'default',
@@ -189,17 +191,19 @@ class OrderController extends Controller
                 'is_default' => 1,
             ]);
 
+            // ------------------- Crear orden -------------------
             $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
             $estimatedDelivery = Carbon::now()->addDays(5);
 
             $order = Order::create([
                 'order_code' => 'DEC-' . strtoupper(Str::random(10)),
                 'user_id' => $user->id,
-                'subtotal' => $request->subtotal,
-                'total' => $request->total,
-                'discount' => $request->discount ?? 0,
-                'shipping_cost' => $request->transport_fee ?? 0,
-                'tax' => 0,
+                'subtotal' => $request->subtotal ?? 0.00,
+                'total' => $request->total ?? 0.00,
+                'discount' => $request->discount ?? 0.00,
+                'shipping_cost' => $request->transport_fee ?? 0.00,
+                'tax' => 0.00,
+                'tax_rate' => null,
                 'shipping_address' => trim($address->line1 . ' ' . ($address->line2 ?? '')),
                 'address_id' => $address->id,
                 'mobile1' => $address->mobile1,
@@ -207,36 +211,46 @@ class OrderController extends Controller
                 'payment_method' => $request->payment_method,
                 'status' => 'pendiente',
                 'tracking_number' => $tracking_number,
+                'courier' => null,
+                'estimated_delivery_date' => $estimatedDelivery,
                 'promo_code' => $request->promo_code ?? null,
                 'coupon_type' => in_array($request->coupon_type, ['percent','fixed']) ? $request->coupon_type : null,
             ]);
 
+            // ------------------- Crear items -------------------
             foreach ($request->items as $item) {
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $item['product_id'],
                     'quantity' => $item['quantity'],
                     'price' => $item['price'],
+                    'cost' => $item['cost'] ?? null,
                 ]);
             }
 
+            // ------------------- Crear historial -------------------
             OrderStatusHistory::create([
                 'order_id' => $order->id,
                 'status' => 'pendiente',
                 'nota' => 'Pedido creado correctamente',
             ]);
 
-            // Vincular PaymentIntent al pedido
-            if ($request->payment_intent) {
-                $payment = Payment::where('reference', $request->payment_intent)->first();
-                if ($payment) {
-                    $payment->update([
-                        'order_id' => $order->id,
-                    ]);
-                }
-            }
+            // ------------------- Crear pago -------------------
+            Payment::create([
+                'user_id' => $user->id,
+                'order_id' => $order->id,
+                'method' => $request->payment_method,
+                'provider' => 'stripe',
+                'status' => 'pending',
+                'amount' => $request->total,
+                'transaction_id' => $request->payment_intent,
+                'meta' => json_encode($request->all()),
+            ]);
 
             DB::commit();
+
+            // Opcional: generar PDF
+            //$this->generateOrderPDF($order);
 
             return response()->json([
                 'message' => 'Pedido creado exitosamente. Confirma el pago para procesarlo.',
@@ -247,13 +261,19 @@ class OrderController extends Controller
 
         } catch (\Throwable $e) {
             DB::rollBack();
-            fwrite(STDERR, "Error creando pedido: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
+            Log::error('Error creando pedido', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'payload' => $request->all(),
+            ]);
+
             return response()->json([
                 'error' => 'Error al crear el pedido',
                 'details' => $e->getMessage(),
             ], 500);
         }
     }
+
 
 
 

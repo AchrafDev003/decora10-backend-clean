@@ -74,14 +74,7 @@ class StripeController extends Controller
                 'description' => 'Decora10 - pago previo a pedido',
             ]);
 
-            // Registrar pago local
-            Payment::create([
-                'user_id'   => $userId,
-                'reference' => $intent->id,
-                'amount'    => $amount,
-                'currency'  => 'EUR',
-                'status'    => 'pending',
-            ]);
+
 
             Log::info('PaymentIntent creado (payment-first)', [
                 'payment_intent' => $intent->id,
@@ -100,23 +93,16 @@ class StripeController extends Controller
                 'env'          => $stripeMode,
             ]);
 
-
-        }catch (\Throwable $e) {
+        } catch (\Throwable $e) {
             Log::error('Stripe PaymentIntent error', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace'   => $e->getTraceAsString(),
             ]);
-            // Antes:
-            // fwrite(STDERR, "Stripe PaymentIntent error: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
-
-            // Ahora:
-
 
             return response()->json([
                 'success' => false,
-                'error'   => $e->getMessage(),
+                'error'   => 'No se pudo iniciar el pago',
             ], 500);
         }
-
     }
 }
