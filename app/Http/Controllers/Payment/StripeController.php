@@ -3,95 +3,101 @@
 namespace App\Http\Controllers\Payment;
 
 use App\Http\Controllers\Controller;
+use App\Models\Payment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Stripe\Stripe;
 use Stripe\PaymentIntent;
-use Illuminate\Support\Facades\Log;
 
 class StripeController extends Controller
 {
     public function createIntent(Request $request)
     {
-        // Validación de entrada
         $request->validate([
-            'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|string',
-            'user_id' => 'required|integer',
-            'order_id' => 'sometimes|integer',
+            'amount'          => 'required|numeric|min:0.01',
+            'payment_method'  => 'required|string',
+            'user_id'         => 'required|integer',
         ]);
 
         try {
-            $amount = $request->input('amount');
-            $paymentMethod = strtolower($request->input('payment_method'));
-            $userId = $request->input('user_id');
-            $orderId = $request->input('order_id', null);
+            $amount        = (float) $request->amount;
+            $paymentMethod = strtolower($request->payment_method);
+            $userId        = $request->user_id;
 
-            // ⚡ Modo Stripe
-            $stripeMode = env('STRIPE_MODE', 'test');
+            // ⚡ Stripe mode
+            $stripeMode = config('services.stripe.mode', 'test');
+
             $secretKey = $stripeMode === 'test'
-                ? trim(env('STRIPE_SECRET_TEST'), '"')
-                : trim(env('STRIPE_SECRET_LIVE'), '"');
+                ? config('services.stripe.secret_test')
+                : config('services.stripe.secret_live');
 
             Stripe::setApiKey($secretKey);
 
-            // Métodos de pago válidos
-            $validMethods = $stripeMode === 'test' ? ['card', 'sofort'] : ['card', 'bizum'];
+            // Métodos permitidos
+            $validMethods = $stripeMode === 'test'
+                ? ['card', 'sofort']
+                : ['card', 'card', 'bizum'];
 
             if ($stripeMode === 'test' && $paymentMethod === 'bizum') {
                 $paymentMethod = 'sofort';
             }
 
-            if (!in_array($paymentMethod, $validMethods)) {
+            if (!in_array($paymentMethod, $validMethods, true)) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Método de pago no soportado',
-                ], 400);
+                    'error'   => 'Método de pago no soportado',
+                ], 422);
             }
 
-            // Crear PaymentIntent
+            // 💰 Convertir a céntimos (Stripe exige int)
+            $amountCents = (int) round($amount * 100);
+
+            // Crear PaymentIntent en Stripe
             $intent = PaymentIntent::create([
-                'amount' => (int) ($amount * 100),
-                'currency' => 'eur',
+                'amount'               => $amountCents,
+                'currency'             => 'eur',
                 'payment_method_types' => [$paymentMethod],
                 'metadata' => [
-                    'description' => "Decora10 pago $paymentMethod" . ($orderId ? " - Pedido #$orderId" : ""),
                     'user_id' => $userId,
-                    'method' => $paymentMethod,
-                    'env' => $stripeMode,
+                    'env'     => $stripeMode,
                 ],
+                'description' => 'Decora10 - pago previo a pedido',
             ]);
 
-            // Log para depuración en producción
-            Log::info('Stripe PaymentIntent creado', [
-                'id' => $intent->id,
-                'clientSecret' => $intent->client_secret,
-                'method' => $paymentMethod,
-                'amount' => $intent->amount,
-                'currency' => $intent->currency,
-                'env' => $stripeMode,
+            // Registrar pago local (SIN order_id aún)
+            Payment::create([
+                'user_id'   => $userId,
+                'reference' => $intent->id,
+                'amount'    => $amount,
+                'currency'  => 'EUR',
+                'status'    => 'pending',
+            ]);
+
+            Log::info('PaymentIntent creado (payment-first)', [
+                'payment_intent' => $intent->id,
+                'user_id'        => $userId,
+                'amount'         => $amount,
+                'method'         => $paymentMethod,
+                'env'            => $stripeMode,
             ]);
 
             return response()->json([
-                'success' => true,
+                'success'       => true,
                 'clientSecret' => $intent->client_secret,
-                'payment_method' => $paymentMethod,
-                'env' => $stripeMode,
-                'amount' => $intent->amount / 100,
-                'currency' => $intent->currency,
+                'amount'       => $amount,
+                'currency'     => 'EUR',
+                'method'       => $paymentMethod,
+                'env'          => $stripeMode,
             ]);
 
-        } catch (\Exception $e) {
-            Log::error('Stripe Error', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString(),
+        } catch (\Throwable $e) {
+            Log::error('Stripe PaymentIntent error', [
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'error' => 'Error al crear el PaymentIntent',
-                'message' => $e->getMessage(),
+                'error'   => 'No se pudo iniciar el pago',
             ], 500);
         }
     }
