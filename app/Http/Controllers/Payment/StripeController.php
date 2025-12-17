@@ -31,12 +31,16 @@ class StripeController extends Controller
                 ? trim(env('STRIPE_SECRET_TEST', ''), '"')
                 : trim(env('STRIPE_SECRET_LIVE', ''), '"');
 
+            if (empty($secretKey)) {
+                throw new \Exception('Stripe secret key no configurada');
+            }
+
             Stripe::setApiKey($secretKey);
 
             // Métodos permitidos
             $validMethods = $stripeMode === 'test'
                 ? ['card', 'sofort']
-                : ['card', 'card', 'bizum'];
+                : ['card', 'bizum'];
 
             if ($stripeMode === 'test' && $paymentMethod === 'bizum') {
                 $paymentMethod = 'sofort';
@@ -49,10 +53,16 @@ class StripeController extends Controller
                 ], 422);
             }
 
-            // 💰 Convertir a céntimos (Stripe exige int)
+            // 💰 Convertir a céntimos
             $amountCents = (int) round($amount * 100);
+            if ($amountCents <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'error'   => 'Cantidad inválida para Stripe',
+                ], 422);
+            }
 
-            // Crear PaymentIntent en Stripe
+            // Crear PaymentIntent
             $intent = PaymentIntent::create([
                 'amount'               => $amountCents,
                 'currency'             => 'eur',
@@ -64,7 +74,7 @@ class StripeController extends Controller
                 'description' => 'Decora10 - pago previo a pedido',
             ]);
 
-            // Registrar pago local (SIN order_id aún)
+            // Registrar pago local
             Payment::create([
                 'user_id'   => $userId,
                 'reference' => $intent->id,
@@ -82,7 +92,7 @@ class StripeController extends Controller
             ]);
 
             return response()->json([
-                'success'       => true,
+                'success'      => true,
                 'clientSecret' => $intent->client_secret,
                 'amount'       => $amount,
                 'currency'     => 'EUR',
@@ -92,7 +102,8 @@ class StripeController extends Controller
 
         } catch (\Throwable $e) {
             Log::error('Stripe PaymentIntent error', [
-                'error' => $e->getMessage(),
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
             ]);
 
             return response()->json([
