@@ -100,16 +100,15 @@ class StripeController extends Controller
                 'env'          => $stripeMode,
             ]);
 
-        } catch (\Throwable $e) {
-            Log::error('Stripe PaymentIntent error', [
-                'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
-            ]);
+        }catch (\Throwable $e) {
+            // Imprime directamente en la consola de Railway
+            fwrite(STDERR, "Stripe PaymentIntent error: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
 
             return response()->json([
                 'success' => false,
-                'error'   => 'No se pudo iniciar el pago',
+                'error'   => $e->getMessage(),
             ], 500);
         }
+
     }
 }
