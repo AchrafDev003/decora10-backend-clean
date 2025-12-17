@@ -16,7 +16,7 @@ return [
     'stripe' => [
         // Selecciona automáticamente según STRIPE_MODE
         'key' => env('STRIPE_MODE', 'test') === 'live'
-            ? trim(env('STRIPE_KEY_LIVE', ''), '"')
+            ? trim(env('VITE_STRIPE_PUBLIC_KEY', ''), '"')
             : trim(env('STRIPE_KEY_TEST', ''), '"'),
         'secret' => env('STRIPE_MODE', 'test') === 'live'
             ? trim(env('STRIPE_SECRET_LIVE', ''), '"')

@@ -28,7 +28,7 @@ class StripeWebhookController extends Controller
             $event = Webhook::constructEvent(
                 $payload,
                 $sigHeader,
-                trim(config('services.stripe.webhook_secret'), '"')
+                trim(env('STRIPE_WEBHOOK_SECRET'), '"')
 
             );
         } catch (\Throwable $e) {
