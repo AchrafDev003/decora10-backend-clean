@@ -110,7 +110,7 @@ class StripeController extends Controller
             // fwrite(STDERR, "Stripe PaymentIntent error: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
 
             // Ahora:
-            fwrite(\STDERR, "Stripe PaymentIntent error: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
+
 
             return response()->json([
                 'success' => false,
