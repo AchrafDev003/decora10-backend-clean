@@ -25,11 +25,11 @@ class StripeController extends Controller
             $userId        = $request->user_id;
 
             // ⚡ Stripe mode
-            $stripeMode = config('services.stripe.mode', 'test');
+            $stripeMode = trim(env('STRIPE_MODE', 'test'), '"');
 
             $secretKey = $stripeMode === 'test'
-                ? config('services.stripe.secret_test')
-                : config('services.stripe.secret_live');
+                ? trim(env('STRIPE_SECRET_TEST', ''), '"')
+                : trim(env('STRIPE_SECRET_LIVE', ''), '"');
 
             Stripe::setApiKey($secretKey);
 
