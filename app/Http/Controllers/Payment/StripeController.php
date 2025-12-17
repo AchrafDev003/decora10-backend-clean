@@ -100,9 +100,17 @@ class StripeController extends Controller
                 'env'          => $stripeMode,
             ]);
 
+
         }catch (\Throwable $e) {
-            // Imprime directamente en la consola de Railway
-            fwrite(STDERR, "Stripe PaymentIntent error: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
+            Log::error('Stripe PaymentIntent error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            // Antes:
+            // fwrite(STDERR, "Stripe PaymentIntent error: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
+
+            // Ahora:
+            fwrite(\STDERR, "Stripe PaymentIntent error: {$e->getMessage()}\n{$e->getTraceAsString()}\n");
 
             return response()->json([
                 'success' => false,
