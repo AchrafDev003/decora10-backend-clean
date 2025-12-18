@@ -9,19 +9,26 @@ use App\Http\Middleware\CheckUserRole;
 
 class Kernel extends HttpKernel
 {
-    protected $routeMiddleware = [
-        'auth' => \App\Http\Middleware\Authenticate::class,
-        'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
-        'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
-        'CheckUserRole' => \App\Http\Middleware\CheckUserRole::class, // ✅ Asegúrate que esto está bien escrito
-    ];
+    use Illuminate\Http\Middleware\HandleCors;
+
+class Kernel extends HttpKernel
+{
     protected $middlewareGroups = [
         'api' => [
-            \Fruitcake\Cors\HandleCors::class,
+            HandleCors::class,
             'throttle:api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
     ];
+
+    protected $routeMiddleware = [
+        'auth' => \App\Http\Middleware\Authenticate::class,
+        'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
+        'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
+        'CheckUserRole' => \App\Http\Middleware\CheckUserRole::class,
+    ];
+}
+
 
 
 
