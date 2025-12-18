@@ -7,8 +7,7 @@ use Illuminate\Foundation\Http\Kernel as HttpKernel;
 // IMPORTANTE: añade este use para registrar tu middleware
 use App\Http\Middleware\CheckUserRole;
 
-class Kernel extends HttpKernel
-{
+
     use Illuminate\Http\Middleware\HandleCors;
 
 class Kernel extends HttpKernel
