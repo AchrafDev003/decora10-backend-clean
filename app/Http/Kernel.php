@@ -26,7 +26,7 @@ class Kernel extends HttpKernel
         'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
         'CheckUserRole' => \App\Http\Middleware\CheckUserRole::class,
     ];
-}
+
 
 
 
