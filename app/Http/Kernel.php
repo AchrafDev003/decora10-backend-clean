@@ -1,14 +1,7 @@
 <?php
 
 namespace App\Http;
-
-use Illuminate\Foundation\Http\Kernel as HttpKernel;
-
-// IMPORTANTE: añade este use para registrar tu middleware
-use App\Http\Middleware\CheckUserRole;
-
-
-    use Illuminate\Http\Middleware\HandleCors;
+use Illuminate\Http\Middleware\HandleCors;
 
 class Kernel extends HttpKernel
 {
@@ -26,9 +19,4 @@ class Kernel extends HttpKernel
         'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
         'CheckUserRole' => \App\Http\Middleware\CheckUserRole::class,
     ];
-
-
-
-
-
 }
