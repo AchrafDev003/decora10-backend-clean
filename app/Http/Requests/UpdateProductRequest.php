@@ -33,12 +33,12 @@ class UpdateProductRequest extends FormRequest
             'category_id' => 'required|exists:categories,id',
 
             // ✅ CLAVE
+            // UpdateProductRequest
             'images' => 'nullable|array',
             'images.*' => 'image|mimes:jpg,jpeg,png,webp|max:4096',
-
-            // 🔥 Para borrado
             'delete_images' => 'nullable|array',
             'delete_images.*' => 'integer|exists:product_images,id',
+
         ];
     }
 }
