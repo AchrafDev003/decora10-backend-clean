@@ -24,7 +24,8 @@ class ReviewController extends Controller
         $query = Review::query()
             ->with([
                 'user:id,name',
-                'product:id,name,image' // <- añadimos esta relación
+                'product:id,name',       // información básica del producto
+                'product.images:id,product_id,url' // traer todas las imágenes
             ])
             ->latest();
 
@@ -58,6 +59,7 @@ class ReviewController extends Controller
 
         return response()->json($reviews);
     }
+
 
 
     /**
