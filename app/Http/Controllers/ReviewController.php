@@ -21,7 +21,12 @@ class ReviewController extends Controller
      */
     public function index(Request $request, $productId = null)
     {
-        $query = Review::query()->with('user:id,name')->latest();
+        $query = Review::query()
+            ->with([
+                'user:id,name',
+                'product:id,name,image' // <- añadimos esta relación
+            ])
+            ->latest();
 
         // Filtrar por producto si no es "all"
         if ($productId && $productId !== 'all') {
@@ -33,13 +38,16 @@ class ReviewController extends Controller
             $query->where('rating', $request->rating);
         }
 
-        // Búsqueda opcional por comentario o nombre de usuario
+        // Búsqueda opcional por comentario, usuario o producto
         if ($request->has('search') && trim($request->search) !== '') {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('comment', 'like', "%{$search}%")
                     ->orWhereHas('user', function($q2) use ($search) {
                         $q2->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('product', function($q3) use ($search) {
+                        $q3->where('name', 'like', "%{$search}%");
                     });
             });
         }
@@ -50,7 +58,6 @@ class ReviewController extends Controller
 
         return response()->json($reviews);
     }
-
 
 
     /**
