@@ -24,8 +24,8 @@ class ReviewController extends Controller
         $query = Review::query()
             ->with([
                 'user:id,name',
-                'product:id,name',       // información básica del producto
-                'product.images:id,product_id,url' // traer todas las imágenes
+                'product:id,name',
+                'product.images:id,product_id,image_path,position' // trae todas las imágenes
             ])
             ->latest();
 
