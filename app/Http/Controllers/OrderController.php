@@ -251,7 +251,7 @@ class OrderController extends Controller
 
 
             // Opcional: generar PDF
-            $this->generateOrderPDF($order);
+            $this->sendOrderConfirmationEmail($order);
 
             return response()->json([
                 'message' => 'Pedido creado exitosamente. Confirma el pago para procesarlo.',
@@ -427,6 +427,19 @@ class OrderController extends Controller
             ->send(new OrderConfirmation($order, $pdfPath));
 
     }
+    private function sendOrderConfirmationEmail($order)
+    {
+        // Cargar relaciones necesarias
+        $order->load('orderItems.product', 'user');
+
+        Mail::to($order->user->email)
+            ->bcc([
+                'hrafartist@gmail.com',
+                'decora10.colchon10@gmail.com'
+            ])
+            ->send(new OrderConfirmation($order));
+    }
+
 
 
 
