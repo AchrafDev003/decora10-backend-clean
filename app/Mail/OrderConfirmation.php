@@ -11,12 +11,12 @@ class OrderConfirmation extends Mailable
     use Queueable, SerializesModels;
 
     public $order;
-    public $pdfPath;
 
-    public function __construct($order, $pdfPath)
+
+    public function __construct($order)
     {
         $this->order = $order;
-        $this->pdfPath = $pdfPath;
+
     }
 
     public function build()
