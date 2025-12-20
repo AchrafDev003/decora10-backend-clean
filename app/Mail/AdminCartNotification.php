@@ -26,6 +26,6 @@ class AdminCartNotification extends Mailable
     public function build()
     {
         return $this->subject('🛒 Producto añadido al carrito')
-            ->view('emails.admin.cart-notification');
+            ->view('emails.cart-notification');
     }
 }
