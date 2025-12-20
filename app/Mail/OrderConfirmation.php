@@ -20,6 +20,6 @@ class OrderConfirmation extends Mailable
     public function build(): self
     {
         return $this->subject('Confirmación de tu pedido en Decora10')
-            ->view('emails.order-confirmation'); // sin attach ni pdf
+            ->view('emails.order_confirmation'); // sin attach ni pdf
     }
 }
