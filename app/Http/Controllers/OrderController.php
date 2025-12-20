@@ -249,8 +249,9 @@ class OrderController extends Controller
 
             DB::commit();
 
+
             // Opcional: generar PDF
-            //$this->generateOrderPDF($order);
+            $this->generateOrderPDF($order);
 
             return response()->json([
                 'message' => 'Pedido creado exitosamente. Confirma el pago para procesarlo.',
