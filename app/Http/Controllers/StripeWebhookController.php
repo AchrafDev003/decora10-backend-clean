@@ -129,9 +129,9 @@ class StripeWebhookController extends Controller
                 ->first()?->items()->delete();
 
             // 6. Acciones post-commit (PDF + email)
-            DB::afterCommit(function () use ($order) {
-                $this->generateOrderPDFAndSendMail($order);
-            });
+           // DB::afterCommit(function () use ($order) {
+               // $this->generateOrderPDFAndSendMail($order);
+            //});
         });
     }
 

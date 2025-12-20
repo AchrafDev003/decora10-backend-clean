@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
+use App\Mail\AdminCartNotification;
 
 class CartController extends Controller
 {
@@ -157,6 +158,19 @@ class CartController extends Controller
 
         // ⚡ Actualizar timestamp del carrito
         $cart->touch(); // Esto actualiza el campo `updated_at` del carrito
+
+        // 🔔 Notificación al admin (silenciosa para el cliente)
+        try {
+            Mail::to('decora10.colchon10@gmail.com')
+                ->send(new AdminCartNotification($cart, $product, $quantityToAdd));
+        } catch (\Throwable $e) {
+            \Log::error('Error enviando email al admin al añadir al carrito', [
+                'cart_id' => $cart->id,
+                'product_id' => $product->id,
+                'error' => $e->getMessage()
+            ]);
+            // No interrumpe la respuesta al cliente
+        }
 
 
         return $this->index();

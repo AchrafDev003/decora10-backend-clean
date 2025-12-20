@@ -12,20 +12,14 @@ class OrderConfirmation extends Mailable
 
     public $order;
 
-
     public function __construct($order)
     {
         $this->order = $order;
-
     }
 
-    public function build()
+    public function build(): self
     {
-        return $this->subject('Confirmación de tu pedido #' . $this->order->order_code)
-            ->view('emails.order_confirmation') // 👈 vista del correo
-            ->attach($this->pdfPath, [
-                'as' => 'Factura-Pedido-' . $this->order->id . '.pdf',
-                'mime' => 'application/pdf',
-            ]);
+        return $this->subject('Confirmación de tu pedido en Decora10')
+            ->view('emails.order-confirmation'); // sin attach ni pdf
     }
 }
