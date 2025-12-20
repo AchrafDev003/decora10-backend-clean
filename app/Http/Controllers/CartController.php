@@ -10,7 +10,8 @@ use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
 use App\Mail\AdminCartNotification;
-
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 class CartController extends Controller
 {
     private const MAX_QUANTITY = 5;
@@ -160,17 +161,12 @@ class CartController extends Controller
         $cart->touch(); // Esto actualiza el campo `updated_at` del carrito
 
         // 🔔 Notificación al admin (silenciosa para el cliente)
-        try {
+
             Mail::to('decora10.colchon10@gmail.com')
                 ->send(new AdminCartNotification($cart, $product, $quantityToAdd));
-        } catch (\Throwable $e) {
-            \Log::error('Error enviando email al admin al añadir al carrito', [
-                'cart_id' => $cart->id,
-                'product_id' => $product->id,
-                'error' => $e->getMessage()
-            ]);
+
             // No interrumpe la respuesta al cliente
-        }
+
 
 
         return $this->index();
@@ -218,20 +214,15 @@ class CartController extends Controller
         $item->save();
         $cart->touch();
         // 🔔 Notificación al admin (silenciosa para el cliente)
-        try {
+
             Mail::to('decora10.colchon10@gmail.com')
                 ->send(new AdminCartNotification($cart, $product, $newQuantity));
-        } catch (\Throwable $e) {
-            \Log::error('Error enviando email al admin al añadir al carrito', [
-                'cart_id' => $cart->id,
-                'product_id' => $product->id,
-                'error' => $e->getMessage()
-            ]);
+
 
         return $this->index();
     }
 
-        }
+
 
     /**
      * Eliminar producto del carrito
