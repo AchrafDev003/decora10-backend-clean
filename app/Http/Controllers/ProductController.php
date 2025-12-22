@@ -474,38 +474,51 @@ class ProductController extends Controller
     // -----------------------------
     // --- Eliminar producto ---
     // -----------------------------
-    use Cloudinary\Cloudinary;
-    use Cloudinary\Api\Upload\UploadApi;
+
 
     public function destroy($id)
     {
         $product = Product::with('images')->findOrFail($id);
 
-        foreach ($product->images as $img) {
+        try {
+            // 🔧 Cloudinary igual que en los otros métodos
+            $cloudinary = new Cloudinary(
+                'cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io'
+            );
 
-            // 🔥 Eliminar imagen en Cloudinary si existe
-            if ($img->image_path && str_contains($img->image_path, 'res.cloudinary.com')) {
+            foreach ($product->images as $img) {
 
-                $path = parse_url($img->image_path, PHP_URL_PATH);
-                $filename = pathinfo($path, PATHINFO_FILENAME);
+                // 🔥 Eliminar imagen en Cloudinary si existe
+                if ($img->image_path && str_contains($img->image_path, 'res.cloudinary.com')) {
 
-                if ($filename) {
-                    (new UploadApi())->destroy("products/{$filename}");
+                    $path = parse_url($img->image_path, PHP_URL_PATH);
+                    $filename = pathinfo($path, PATHINFO_FILENAME);
+
+                    if ($filename) {
+                        $cloudinary->uploadApi()->destroy("products/{$filename}");
+                    }
                 }
+
+                // 🧹 Eliminar registro de la imagen en BD
+                $img->delete();
             }
 
-            // 🧹 Eliminar registro de la imagen en BD
-            $img->delete();
+            // 🗑️ Eliminar producto
+            $product->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Producto eliminado correctamente',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar el producto',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
-
-        // 🗑️ Eliminar producto
-        $product->delete();
-
-        return response()->json([
-            'message' => 'Producto eliminado correctamente',
-        ]);
     }
-
 
     // -----------------------------
     // --- Limpiar promociones expiradas ---

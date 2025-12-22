@@ -172,22 +172,48 @@ class UserController extends Controller
         $currentUser = auth()->user();
         $user = User::findOrFail($id);
 
-        // Admin puede eliminar cualquiera
-        if ($currentUser->role === 'admin') {
-            $user->delete();
-            return response()->json(['message' => 'Usuario eliminado correctamente']);
+        // 🔐 Permisos: admin o dueño (solo clientes)
+        if (
+            $currentUser->role !== 'admin' &&
+            !(
+                $currentUser->role === 'dueno' &&
+                in_array($user->role, ['cliente', 'cliente_fiel'])
+            )
+        ) {
+            return response()->json(['message' => 'No autorizado'], 403);
         }
 
-        // Dueño puede eliminar solo clientes normales o fieles
-        if ($currentUser->role === 'dueno') {
-            if (in_array($user->role, ['cliente', 'cliente_fiel'])) {
-                $user->delete();
-                return response()->json(['message' => 'Usuario eliminado correctamente']);
-            } else {
-                return response()->json(['message' => 'No autorizado para eliminar este usuario'], 403);
+        try {
+            // 🔧 Cloudinary IGUAL que en updateUserPhoto
+            $cloudinary = new Cloudinary(
+                'cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io'
+            );
+
+            // 🔥 Eliminar foto en Cloudinary si existe
+            if ($user->photo && str_contains($user->photo, 'res.cloudinary.com')) {
+
+                $path = parse_url($user->photo, PHP_URL_PATH);
+                $filename = pathinfo($path, PATHINFO_FILENAME);
+
+                if ($filename) {
+                    $cloudinary->uploadApi()->destroy("users/{$filename}");
+                }
             }
-        }
 
-        return response()->json(['message' => 'No autorizado para eliminar usuarios'], 403);
+            // 🗑️ Eliminar usuario
+            $user->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Usuario eliminado correctamente',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar el usuario',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
     }
 }
