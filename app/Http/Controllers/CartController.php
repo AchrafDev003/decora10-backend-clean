@@ -122,6 +122,9 @@ class CartController extends Controller
             'product_id' => $product->id
         ]);
 
+        // Asegurar relación del producto (evita queries implícitas)
+        $item->setRelation('product', $product);
+
         if (!$item->exists) {
             $item->quantity = 0;
             $item->total_price = 0;
@@ -129,7 +132,7 @@ class CartController extends Controller
 
         $quantityToAdd = $request->input('quantity', 1);
 
-        // Validar stock
+        // Validar stock disponible
         $availableStock = $product->quantity - $item->quantity;
         if ($quantityToAdd > $availableStock) {
             return response()->json([
@@ -141,7 +144,7 @@ class CartController extends Controller
         $price = $product->promo_price ?? $product->price;
         $newQuantity = min(self::MAX_QUANTITY, $item->quantity + $quantityToAdd);
 
-// Validar total máximo
+        // Validar total máximo del carrito (TOTAL REAL)
         if ($this->willExceedTotal($cart, $item, $newQuantity)) {
             return response()->json([
                 'success' => false,
@@ -149,28 +152,24 @@ class CartController extends Controller
             ], 400);
         }
 
+        // Persistir cambios
         $item->quantity = $newQuantity;
         $item->total_price = $price * $newQuantity;
 
-
-        // Reservar por 2 días
+        // Reservar producto por 2 días
         $item->reserved_until = now()->addDays(2);
         $item->save();
 
-        // ⚡ Actualizar timestamp del carrito
-        $cart->touch(); // Esto actualiza el campo `updated_at` del carrito
+        // Actualizar timestamp del carrito
+        $cart->touch();
 
-        // 🔔 Notificación al admin (silenciosa para el cliente)
-
-            Mail::to('decora10.colchon10@gmail.com')
-                ->send(new AdminCartNotification($cart, $product, $quantityToAdd));
-
-            // No interrumpe la respuesta al cliente
-
-
+        // Notificación al admin (no bloquea la respuesta)
+        Mail::to('decora10.colchon10@gmail.com')
+            ->send(new AdminCartNotification($cart, $product, $quantityToAdd));
 
         return $this->index();
     }
+
 
 
 
@@ -184,12 +183,19 @@ class CartController extends Controller
         ]);
 
         $cart = $this->getCart();
-        $item = $cart->items()->where('product_id', $productId)->firstOrFail();
+
+        $item = $cart->items()
+            ->where('product_id', $productId)
+            ->firstOrFail();
+
         $product = $item->product;
+
+        // Garantizar relación (consistencia con add)
+        $item->setRelation('product', $product);
 
         $requestedQuantity = $request->input('quantity', 1);
 
-        // 🔒 Validar stock
+        // Validar stock disponible
         if ($requestedQuantity > $product->quantity) {
             return response()->json([
                 'success' => false,
@@ -200,7 +206,7 @@ class CartController extends Controller
         $newQuantity = min(self::MAX_QUANTITY, $requestedQuantity);
         $price = $product->promo_price ?? $product->price;
 
-// Validar total máximo
+        // Validar total máximo del carrito (TOTAL REAL)
         if ($this->willExceedTotal($cart, $item, $newQuantity)) {
             return response()->json([
                 'success' => false,
@@ -208,16 +214,17 @@ class CartController extends Controller
             ], 400);
         }
 
+        // Persistir cambios
         $item->quantity = $newQuantity;
         $item->total_price = $price * $newQuantity;
-
         $item->save();
+
+        // Actualizar timestamp del carrito
         $cart->touch();
-        // 🔔 Notificación al admin (silenciosa para el cliente)
 
-            Mail::to('decora10.colchon10@gmail.com')
-                ->send(new AdminCartNotification($cart, $product, $newQuantity));
-
+        // Notificación al admin (silenciosa)
+        Mail::to('decora10.colchon10@gmail.com')
+            ->send(new AdminCartNotification($cart, $product, $newQuantity));
 
         return $this->index();
     }
@@ -350,8 +357,17 @@ class CartController extends Controller
      */
     private function willExceedTotal(Cart $cart, CartItem $item, int $newQuantity): bool
     {
-        $currentTotal = $cart->items->sum('total_price') - $item->total_price;
-        $newTotal = $currentTotal + ($item->product->promo_price ?? $item->product->price) * $newQuantity;
+        $currentCartTotal = $cart->items()->sum('total_price');
+
+        $currentItemTotal = $item->exists
+            ? $item->total_price
+            : 0;
+
+        $price = $item->product->promo_price ?? $item->product->price;
+
+        $newTotal = ($currentCartTotal - $currentItemTotal) + ($price * $newQuantity);
+
         return $newTotal > self::MAX_TOTAL;
     }
+
 }
