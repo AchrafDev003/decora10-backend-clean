@@ -86,7 +86,7 @@
     </p>
 
     <div class="order-box">
-        <strong>Número de seguimiento:</strong> #{{ $order->tracking_number }}<br>
+        <strong>Número de seguimiento: {{ $order->tracking_number }}</strong><br>
         <strong>Estado:</strong> <span class="status">En preparación</span>
     </div>
 

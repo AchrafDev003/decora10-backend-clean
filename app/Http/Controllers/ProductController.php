@@ -474,21 +474,38 @@ class ProductController extends Controller
     // -----------------------------
     // --- Eliminar producto ---
     // -----------------------------
+    use Cloudinary\Cloudinary;
+    use Cloudinary\Api\Upload\UploadApi;
+
     public function destroy($id)
     {
         $product = Product::with('images')->findOrFail($id);
 
         foreach ($product->images as $img) {
-            if (Storage::disk('public')->exists($img->image_path)) {
-                Storage::disk('public')->delete($img->image_path);
+
+            // 🔥 Eliminar imagen en Cloudinary si existe
+            if ($img->image_path && str_contains($img->image_path, 'res.cloudinary.com')) {
+
+                $path = parse_url($img->image_path, PHP_URL_PATH);
+                $filename = pathinfo($path, PATHINFO_FILENAME);
+
+                if ($filename) {
+                    (new UploadApi())->destroy("products/{$filename}");
+                }
             }
+
+            // 🧹 Eliminar registro de la imagen en BD
             $img->delete();
         }
 
+        // 🗑️ Eliminar producto
         $product->delete();
 
-        return response()->json(['message' => 'Producto eliminado correctamente']);
+        return response()->json([
+            'message' => 'Producto eliminado correctamente',
+        ]);
     }
+
 
     // -----------------------------
     // --- Limpiar promociones expiradas ---
