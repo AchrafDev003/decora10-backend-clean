@@ -205,19 +205,18 @@ class ProductController extends Controller
                 'category_id'   => $request->category_id,
             ]);
 
-            if ($request->file('images')) {
+            if ($request->hasFile('images')) {
                 $position = 0;
 
                 foreach ($request->file('images') as $file) {
-
                     $publicId = "products/" . Str::slug($product->name) . "-" . uniqid();
 
                     $result = $cloudinary->uploadApi()->upload(
                         $file->getRealPath(),
                         [
-                            'public_id' => $publicId,
+                            'public_id'     => $publicId,
                             'resource_type' => 'image',
-                            'overwrite' => true,
+                            'overwrite'     => true,
                         ]
                     );
 
@@ -244,6 +243,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
 
 
     // -----------------------------

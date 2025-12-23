@@ -26,6 +26,8 @@ class StoreProductRequest extends FormRequest
             'promo_ends_at' => 'nullable|date|after_or_equal:today',
             'quantity' => 'required|integer|min:1',
             'image' => 'nullable|image|mimes:jpg,jpeg,png,webp,avif|max:2048',
+            'images' => 'nullable|array',
+            'images.*' => 'image|mimes:jpg,jpeg,png,webp,avif|max:2048',
 
             'category_id' => 'required|exists:categories,id',
             'id_product' => [
