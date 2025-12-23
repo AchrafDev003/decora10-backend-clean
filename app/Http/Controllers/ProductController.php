@@ -182,81 +182,66 @@ class ProductController extends Controller
 
     public function store(StoreProductRequest $request)
     {
-        $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
+        $cloudinary = new Cloudinary(
+            'cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io'
+        );
 
-        // Intentaremos crear el producto hasta que tengamos un slug válido
-        $maxAttempts = 5; // Evita bucles infinitos
-        $attempt = 0;
-        do {
-            $attempt++;
+        DB::beginTransaction();
 
-            // Generar slug único
+        try {
             $slug = $this->generateUniqueSlug($request->name);
 
-            try {
-                // Crear producto
-                $product = Product::create([
-                    'id_product'    => $request->id_product,
-                    'name'          => $request->name,
-                    'slug'          => $slug,
-                    'description'   => $request->description,
-                    'price'         => $request->price,
-                    'promo_price'   => $request->promo_price,
-                    'is_promo'      => $request->boolean('is_promo'),
-                    'promo_ends_at' => $request->promo_ends_at,
-                    'quantity'      => $request->quantity,
-                    'category_id'   => $request->category_id,
-                ]);
+            $product = Product::create([
+                'id_product'    => $request->id_product,
+                'name'          => $request->name,
+                'slug'          => $slug,
+                'description'   => $request->description,
+                'price'         => $request->price,
+                'promo_price'   => $request->promo_price,
+                'is_promo'      => $request->boolean('is_promo'),
+                'promo_ends_at' => $request->promo_ends_at,
+                'quantity'      => $request->quantity,
+                'category_id'   => $request->category_id,
+            ]);
 
-                // Subir imágenes a Cloudinary si las hay
-                if ($request->hasFile('images')) {
-                    $position = 0;
+            if ($request->file('images')) {
+                $position = 0;
 
-                    foreach ($request->file('images') as $file) {
-                        $slugName = Str::slug($product->name);
-                        $publicId = "products/{$slugName}-" . uniqid();
+                foreach ($request->file('images') as $file) {
 
-                        $result = $cloudinary->uploadApi()->upload(
-                            $file->getRealPath(),
-                            [
-                                'folder' => 'products',
-                                'public_id' => $publicId,
-                                'overwrite' => true,
-                                'resource_type' => 'image',
-                            ]
-                        );
+                    $publicId = "products/" . Str::slug($product->name) . "-" . uniqid();
 
-                        $url = $result['secure_url'] ?? null;
+                    $result = $cloudinary->uploadApi()->upload(
+                        $file->getRealPath(),
+                        [
+                            'public_id' => $publicId,
+                            'resource_type' => 'image',
+                            'overwrite' => true,
+                        ]
+                    );
 
-                        $product->images()->create([
-                            'image_path' => $url,
-                            'position'   => $position++,
-                        ]);
-                    }
-                }
-
-                // Todo salió bien, rompemos el bucle
-                break;
-
-            } catch (\Illuminate\Database\QueryException $e) {
-                // Si es error por slug duplicado, generamos otro y reintentamos
-                if ($e->errorInfo[1] == 1062 && $attempt < $maxAttempts) {
-                    // El bucle continúa
-                } else {
-                    // Otro error o intentos agotados
-                    return response()->json([
-                        'message' => 'No se pudo crear el producto.',
-                        'error'   => $e->getMessage()
-                    ], 500);
+                    $product->images()->create([
+                        'image_path' => $result['secure_url'],
+                        'position'   => $position++,
+                    ]);
                 }
             }
 
-        } while ($attempt < $maxAttempts);
+            DB::commit();
 
-        return response()->json([
-            'message' => 'Producto creado exitosamente',
-            'product' => new ProductResource($product->load('images')),
-        ], 201);
+            return response()->json([
+                'message' => 'Producto creado exitosamente',
+                'product' => new ProductResource($product->load('images')),
+            ], 201);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Error al crear el producto',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
     }
 
 
@@ -403,72 +388,89 @@ class ProductController extends Controller
     {
         $product = Product::with('images')->findOrFail($id);
 
-        $product->update([
-            'id_product'    => $request->id_product,
-            'name'          => $request->name,
-            'slug'          => $this->generateUniqueSlug($request->name, $product->id),
-            'description'   => $request->description,
-            'price'         => $request->price,
-            'promo_price'   => $request->promo_price,
-            'is_promo'      => $request->boolean('is_promo'),
-            'promo_ends_at' => $request->promo_ends_at,
-            'quantity'      => $request->quantity,
-            'category_id'   => $request->category_id,
-        ]);
+        DB::beginTransaction();
 
-        $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
+        try {
+            $product->update([
+                'id_product'    => $request->id_product,
+                'name'          => $request->name,
+                'slug'          => $this->generateUniqueSlug($request->name, $product->id),
+                'description'   => $request->description,
+                'price'         => $request->price,
+                'promo_price'   => $request->promo_price,
+                'is_promo'      => $request->boolean('is_promo'),
+                'promo_ends_at' => $request->promo_ends_at,
+                'quantity'      => $request->quantity,
+                'category_id'   => $request->category_id,
+            ]);
 
-        // Eliminar imágenes seleccionadas
-        if ($request->filled('delete_images')) {
-            $idsToDelete = $request->input('delete_images');
-            $imagesToDelete = $product->images()->whereIn('id', $idsToDelete)->get();
+            $cloudinary = new Cloudinary(
+                'cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io'
+            );
 
-            foreach ($imagesToDelete as $img) {
-                // Si la imagen está en Cloudinary, borrarla
-                if ($img->image_path && str_contains($img->image_path, 'res.cloudinary.com')) {
-                    $path = parse_url($img->image_path, PHP_URL_PATH);
-                    $filename = pathinfo($path, PATHINFO_FILENAME);
-                    if ($filename) {
-                        (new UploadApi())->destroy("products/{$filename}");
+            /* 🗑️ ELIMINAR IMÁGENES */
+            if ($request->filled('delete_images')) {
+                $idsToDelete = $request->input('delete_images');
+
+                $imagesToDelete = $product->images()
+                    ->whereIn('id', $idsToDelete)
+                    ->get();
+
+                foreach ($imagesToDelete as $img) {
+                    if ($img->image_path && str_contains($img->image_path, 'res.cloudinary.com')) {
+                        $path = parse_url($img->image_path, PHP_URL_PATH);
+                        $filename = pathinfo($path, PATHINFO_FILENAME);
+
+                        if ($filename) {
+                            $cloudinary->uploadApi()->destroy("products/{$filename}");
+                        }
                     }
+
+                    $img->delete();
                 }
-
-                $img->delete();
             }
-        }
 
-        // Agregar nuevas imágenes
-        if ($request->hasFile('images')) {
-            $nextPosition = $product->images()->max('position') + 1 ?? 0;
+            /* ➕ AGREGAR NUEVAS IMÁGENES */
+            if ($request->file('images')) {
+                $currentMax = $product->images()->max('position');
+                $nextPosition = is_null($currentMax) ? 0 : $currentMax + 1;
 
-            foreach ($request->file('images') as $file) {
-                $slugName = Str::slug($product->name);
-                $publicId = "products/{$slugName}-" . uniqid();
+                foreach ($request->file('images') as $file) {
+                    $publicId = "products/" . Str::slug($product->name) . "-" . uniqid();
 
-                $result = $cloudinary->uploadApi()->upload(
-                    $file->getRealPath(),
-                    [
-                        'folder' => 'products',
-                        'public_id' => $publicId,
-                        'overwrite' => true,
-                        'resource_type' => 'image',
-                    ]
-                );
+                    $result = $cloudinary->uploadApi()->upload(
+                        $file->getRealPath(),
+                        [
+                            'public_id'    => $publicId,
+                            'resource_type'=> 'image',
+                            'overwrite'    => true,
+                        ]
+                    );
 
-                $url = $result['secure_url'] ?? null;
-
-                $product->images()->create([
-                    'image_path' => $url,
-                    'position'   => $nextPosition++,
-                ]);
+                    $product->images()->create([
+                        'image_path' => $result['secure_url'],
+                        'position'   => $nextPosition++,
+                    ]);
+                }
             }
-        }
 
-        return response()->json([
-            'message' => 'Producto actualizado correctamente',
-            'product' => new ProductResource($product->load('images')),
-        ]);
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Producto actualizado correctamente',
+                'product' => new ProductResource($product->load('images')),
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Error al actualizar el producto',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
     }
+
 
 
     // -----------------------------
