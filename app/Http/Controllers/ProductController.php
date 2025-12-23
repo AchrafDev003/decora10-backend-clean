@@ -12,6 +12,7 @@ use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use Illuminate\Http\Request;
 use Cloudinary\Cloudinary;
+use Illuminate\Support\Facades\DB; // ✅ IMPORTANTE
 
 class ProductController extends Controller
 {
