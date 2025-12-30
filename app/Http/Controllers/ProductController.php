@@ -60,7 +60,7 @@ class ProductController extends Controller
         $page = $request->input('page', 1);
 
         $query = Product::with(['category', 'images'])
-            ->where('quantity', '>', 0); // <- SOLO productos con stock mayor a 1;
+            ->where('quantity', '>', 1); // <- SOLO productos con stock mayor a 1;
 
         // 🔎 Búsqueda
         if ($request->filled('search')) {
@@ -529,7 +529,7 @@ class ProductController extends Controller
     {
         // Construir la query principal con relaciones
         $query = Product::with(['category', 'images'])
-            ->where('quantity', '>', 0);
+            ->where('quantity', '>', 1);
 
         // -------------------------------
         // Filtro por búsqueda de texto
@@ -650,29 +650,34 @@ class ProductController extends Controller
         $query = $request->query('query');
 
         if (!$query || strlen($query) < 2) {
-            return response()->json(['success' => true, 'data' => []]);
+            return response()->json([
+                'success' => true,
+                'data' => []
+            ]);
         }
 
-        $products = Product::select('id', 'name', 'price', 'quantity')
-            ->with(['images' => function($q) {
+        $products = Product::query()
+            ->select('id', 'name', 'price', 'quantity')
+            ->with(['images' => function ($q) {
                 $q->select('id', 'product_id', 'image_path');
             }])
+            ->where('quantity', '>', 1) // ✅ FILTRO CORRECTO
             ->where('name', 'LIKE', "%{$query}%")
             ->limit(10)
             ->get()
             ->map(function ($p) {
                 return [
-                    'id' => $p->id,
-                    'name' => $p->name,
-                    'price' => $p->price,
+                    'id'       => $p->id,
+                    'name'     => $p->name,
+                    'price'    => $p->price,
                     'quantity' => $p->quantity,
-                    'image' => $p->images->first()->image_path ?? null,
+                    'image'    => $p->images->first()->image_path ?? null,
                 ];
             });
 
         return response()->json([
             'success' => true,
-            'data' => $products
+            'data'    => $products,
         ]);
     }
 
