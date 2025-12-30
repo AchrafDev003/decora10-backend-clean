@@ -100,14 +100,8 @@ class ProductController extends Controller
         // 🔹 Paginación
         $products = $query->paginate($perPage, ['*'], 'page', $page);
 
-        return response()->json([
-            'success' => true,
-            'data'    => ProductResource::collection($products),
-            'current_page' => $products->currentPage(),
-            'last_page'    => $products->lastPage(),
-            'per_page'     => $products->perPage(),
-            'total'        => $products->total(),
-        ]);
+        return ProductResource::collection($products);
+
 
     }
 
@@ -293,15 +287,8 @@ class ProductController extends Controller
 
         $products = $query->paginate($perPage, ['*'], 'page', $page);
 
-        return response()->json([
-            'success'       => true,
-            'section'       => 'general',
-            'data'          => ProductResource::collection($products),
-            'current_page'  => $products->currentPage(),
-            'last_page'     => $products->lastPage(),
-            'per_page'      => $products->perPage(),
-            'total'         => $products->total(),
-        ]);
+        return ProductResource::collection($products);
+
     }
 
 
@@ -339,15 +326,8 @@ class ProductController extends Controller
 
         $products = $query->paginate($perPage, ['*'], 'page', $page);
 
-        return response()->json([
-            'success'       => true,
-            'section'       => 'colchoneria',
-            'data'          => ProductResource::collection($products),
-            'current_page'  => $products->currentPage(),
-            'last_page'     => $products->lastPage(),
-            'per_page'      => $products->perPage(),
-            'total'         => $products->total(),
-        ]);
+        return ProductResource::collection($products);
+
     }
 
 
@@ -602,14 +582,8 @@ class ProductController extends Controller
         // -------------------------------
         // Devolver colección con meta completo
         // -------------------------------
-        return ProductResource::collection($products)->additional([
-            'meta' => [
-                'total'        => $products->total(),
-                'current_page' => $products->currentPage(),
-                'last_page'    => $products->lastPage(),
-                'per_page'     => $products->perPage(),
-            ]
-        ]);
+        return ProductResource::collection($products);
+
     }
     public function searchAdmin(Request $request)
     {
@@ -667,14 +641,8 @@ class ProductController extends Controller
         // -------------------------------
         // Devolver colección con meta completo
         // -------------------------------
-        return ProductResource::collection($products)->additional([
-            'meta' => [
-                'total'        => $products->total(),
-                'current_page' => $products->currentPage(),
-                'last_page'    => $products->lastPage(),
-                'per_page'     => $products->perPage(),
-            ]
-        ]);
+        return ProductResource::collection($products);
+
     }
 
     public function quickSearch(Request $request)
