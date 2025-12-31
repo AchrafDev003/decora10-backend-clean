@@ -196,6 +196,10 @@ class ProductController extends Controller
                 'is_promo'      => $request->boolean('is_promo'),
                 'promo_ends_at' => $request->promo_ends_at,
                 'quantity'      => $request->quantity,
+
+                // 🔥 LOGÍSTICA
+                'logistic_type' => $request->logistic_type,
+
                 'category_id'   => $request->category_id,
             ]);
 
@@ -203,7 +207,7 @@ class ProductController extends Controller
                 $position = 0;
 
                 foreach ($request->file('images') as $file) {
-                    $publicId = "products/" . Str::slug($product->name) . "-" . uniqid();
+                    $publicId = 'products/' . Str::slug($product->name) . '-' . uniqid();
 
                     $result = $cloudinary->uploadApi()->upload(
                         $file->getRealPath(),
@@ -383,6 +387,7 @@ class ProductController extends Controller
                 'promo_ends_at' => $request->promo_ends_at,
                 'quantity'      => $request->quantity,
                 'category_id'   => $request->category_id,
+                'logistic_type' => $request->logistic_type, // 👈 AÑADIDO
             ]);
 
             $cloudinary = new Cloudinary(
@@ -412,8 +417,8 @@ class ProductController extends Controller
             }
 
             /* ➕ AGREGAR NUEVAS IMÁGENES */
-            if ($request->file('images')) {
-                $currentMax = $product->images()->max('position');
+            if ($request->hasFile('images')) {
+                $currentMax   = $product->images()->max('position');
                 $nextPosition = is_null($currentMax) ? 0 : $currentMax + 1;
 
                 foreach ($request->file('images') as $file) {
@@ -422,9 +427,9 @@ class ProductController extends Controller
                     $result = $cloudinary->uploadApi()->upload(
                         $file->getRealPath(),
                         [
-                            'public_id'    => $publicId,
-                            'resource_type'=> 'image',
-                            'overwrite'    => true,
+                            'public_id'     => $publicId,
+                            'resource_type' => 'image',
+                            'overwrite'     => true,
                         ]
                     );
 
@@ -439,7 +444,7 @@ class ProductController extends Controller
 
             return response()->json([
                 'message' => 'Producto actualizado correctamente',
-                'product' => new ProductResource($product->load('images')),
+                'product' => new ProductResource($product->load('images', 'category')),
             ]);
 
         } catch (\Throwable $e) {
@@ -451,6 +456,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
 
 
 
