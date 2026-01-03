@@ -37,27 +37,49 @@ class CartController extends Controller
     {
         $cart = $this->getCart();
 
-        $items = $cart->items->map(fn($item) => [
-            'id' => $item->id,
-            'product_id' => $item->product_id,
-            'name' => $item->product->name,
-            'price' => $item->product->promo_price ?? $item->product->price,
-            'quantity' => $item->quantity,
-            'subtotal' => $item->total_price,
-            'image' => $item->product->image, // primera imagen principal si existe
-            'images' => $item->product->images->map(fn($img) => [
-                'image_path' => $img->image_path
-            ]), // todas las imágenes
-        ]);
+        $items = $cart->items->map(function ($item) {
+            $product = $item->product;
+
+            return [
+                'id' => $item->id,
+                'product_id' => $product->id,
+                'name' => $product->name,
+
+                // 🔥 LOGÍSTICA (CLAVE)
+                'logistic_type' => $product->logistic_type ?? 'small',
+
+                // Precio unitario
+                'price' => (float) ($product->promo_price ?? $product->price),
+
+                'quantity' => (int) $item->quantity,
+
+                // Subtotal real
+                'subtotal' => (float) $item->total_price,
+
+                // Imagen principal (primera)
+                'image' => optional(
+                    $product->images->sortBy('position')->first()
+                )?->image_path,
+
+                // Todas las imágenes
+                'images' => $product->images
+                    ->sortBy('position')
+                    ->map(fn ($img) => [
+                        'image_path' => $img->image_path
+                    ])
+                    ->values(),
+            ];
+        });
 
         return response()->json([
             'success' => true,
             'data' => [
                 'items' => $items,
-                'total' => $items->sum('subtotal'),
+                'total' => (float) $items->sum('subtotal'),
             ]
         ]);
     }
+
 
     // Mostrar todos los carritos con sus usuarios y productos
     public function adminIndex()
