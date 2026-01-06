@@ -667,9 +667,13 @@ class ProductController extends Controller
             ->with(['images' => function ($q) {
                 $q->select('id', 'product_id', 'image_path');
             }])
-            ->where('quantity', '>', 1) // ✅ FILTRO CORRECTO
-            ->where('name', 'LIKE', "%{$query}%")
-            ->limit(10)
+            ->where('quantity', '>', 1)
+            ->where(function ($q) use ($query) {
+                $q->where('name', 'LIKE', "%{$query}%")
+                    ->orWhere('description', 'LIKE', "%{$query}%");
+            })
+
+            ->limit(16)
             ->get()
             ->map(function ($p) {
                 return [
