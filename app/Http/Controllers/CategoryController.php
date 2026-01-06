@@ -10,6 +10,8 @@ use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use App\Http\Middleware;
 use Cloudinary\Cloudinary;
+use Cloudinary\Api\Upload\UploadApi;
+
 
 class CategoryController extends Controller
 {
@@ -53,7 +55,7 @@ class CategoryController extends Controller
             $cloudinary = new Cloudinary('cloudinary://671366917242686:im5sL8H4zDJr9TrfcM70hOLSOUI@dvo9uq7io');
 
             $slugName = Str::slug($request->name);
-            $publicId = "categories/{$slugName}-" . uniqid();
+            $publicId = "{$slugName}-" . uniqid(); // Sin "categories/"
 
             $result = $cloudinary->uploadApi()->upload(
                 $request->file('image')->getRealPath(),
@@ -106,7 +108,7 @@ class CategoryController extends Controller
             }
 
             $slugName = Str::slug($request->name);
-            $publicId = "categories/{$slugName}-" . uniqid();
+            $publicId = "{$slugName}-" . uniqid(); // Sin "categories/"
 
             $result = $cloudinary->uploadApi()->upload(
                 $request->file('image')->getRealPath(),
