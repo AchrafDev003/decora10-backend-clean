@@ -342,7 +342,7 @@ class ProductController extends Controller
     {
         // 1. Obtener producto actual
         $producto = Product::where('id', $id)
-            ->where('quantity', '>', 0)
+            ->where('quantity', '>', 1)
             ->firstOrFail();  // devuelve el modelo directamente
 
         $firstWord = explode(' ', trim($producto->name))[0];
@@ -352,7 +352,7 @@ class ProductController extends Controller
         $related = Product::with(['category', 'images'])
             ->where('id', '!=', $producto->id)
             ->where('name', 'LIKE', "%{$firstWord}%")
-            ->take(8) // Limitar cantidad
+            ->take(12) // Limitar cantidad
             ->get();
 
         return response()->json([
