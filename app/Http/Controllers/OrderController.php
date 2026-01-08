@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+use App\Http\Requests\UpdateOrderRequest;
 use Illuminate\Support\Facades\Log;
 
 use Illuminate\Http\Request; //
