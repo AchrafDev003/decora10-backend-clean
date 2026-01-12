@@ -23,6 +23,7 @@ use App\Http\Controllers\CouponController;
 use App\Http\Middleware\CheckUserRole;
 use App\Http\Controllers\Payment\StripeController;
 use App\Http\Controllers\StripeWebhookController;
+use App\Http\Controllers\SessionController;
 
 
 /*
@@ -252,6 +253,11 @@ Route::prefix('v1')->group(function () {
         // Admin & Owner
         // ==============================
         Route::middleware(CheckUserRole::class . ':admin,dueno')->group(function () {
+            Route::get('/sessions', [SessionController::class, 'index']);
+            Route::get('/sessions/online', [SessionController::class, 'online']);
+
+            Route::patch('/sessions/{sessionId}/logout', [SessionController::class, 'forceLogout']);
+            Route::patch('/sessions/user/{userId}/logout', [SessionController::class, 'forceLogoutUser']);
 
             /** Users management */
             Route::apiResource('users', UserController::class)->only(['index','destroy']);
