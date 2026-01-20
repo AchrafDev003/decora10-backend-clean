@@ -12,22 +12,24 @@ use App\Models\Product;
 use App\Mail\AdminCartNotification;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+
+use App\Models\Pack;
+
+
 class CartController extends Controller
 {
     private const MAX_QUANTITY = 5;
     private const MAX_TOTAL = 2000;
 
     /**
-     * Obtener carrito del usuario autenticado con items y productos
+     * Obtener carrito del usuario autenticado
      */
     private function getCart()
     {
         $user = Auth::user();
-        if (!$user) {
-            abort(401, 'Debes iniciar sesión.');
-        }
+        if (!$user) abort(401, 'Debes iniciar sesión.');
 
-        return Cart::with('items.product')->firstOrCreate(['user_id' => $user->id]);
+        return Cart::with(['items.product', 'items.pack'])->firstOrCreate(['user_id' => $user->id]);
     }
 
     /**
@@ -38,35 +40,21 @@ class CartController extends Controller
         $cart = $this->getCart();
 
         $items = $cart->items->map(function ($item) {
-            $product = $item->product;
+            $type = $item->product ? 'product' : 'pack';
+            $entity = $item->product ?? $item->pack;
 
             return [
                 'id' => $item->id,
-                'product_id' => $product->id,
-                'name' => $product->name,
-
-                // 🔥 LOGÍSTICA (CLAVE)
-                'logistic_type' => $product->logistic_type ?? 'small',
-
-                // Precio unitario
-                'price' => (float) ($product->promo_price ?? $product->price),
-
-                'quantity' => (int) $item->quantity,
-
-                // Subtotal real
+                'type' => $type,
+                'entity_id' => $entity->id,
+                'name' => $entity->name ?? $entity->title,
+                'price' => (float) ($entity->promo_price ?? $entity->price ?? $entity->original_price),
+                'quantity' => $item->quantity,
                 'subtotal' => (float) $item->total_price,
-
-                // Imagen principal (primera)
-                'image' => optional(
-                    $product->images->sortBy('position')->first()
-                )?->image_path,
-
-                // Todas las imágenes
-                'images' => $product->images
-                    ->sortBy('position')
-                    ->map(fn ($img) => [
-                        'image_path' => $img->image_path
-                    ])
+                'image' => optional($entity->images->sortBy('sort_order')->first())->image_path ?? null,
+                'images' => $entity->images
+                    ->sortBy('sort_order')
+                    ->map(fn($img) => ['image_path' => $img->image_path])
                     ->values(),
             ];
         });
@@ -76,190 +64,142 @@ class CartController extends Controller
             'data' => [
                 'items' => $items,
                 'total' => (float) $items->sum('subtotal'),
-            ]
+            ],
         ]);
     }
-
-
-    // Mostrar todos los carritos con sus usuarios y productos
-    public function adminIndex()
-    {
-        $carts = Cart::with(['user', 'items.product'])
-            ->orderBy('updated_at', 'desc')
-            ->get();
-
-        $data = $carts->map(function ($cart) {
-            $items = $cart->items->map(function ($item) {
-                return [
-                    'id' => $item->id,
-                    'product_name' => $item->product->name ?? 'Producto eliminado',
-                    'price' => $item->product->promo_price ?? $item->product->price ?? 0,
-                    'quantity' => $item->quantity,
-                    'subtotal' => $item->total_price ?? 0,
-                    'image' => $item->product->image ?? null,
-                ];
-            });
-
-            return [
-                'id' => $cart->id,
-                'user' => [
-                    'id' => $cart->user->id ?? null,
-                    'name' => $cart->user->name ?? 'N/A',
-                    'email' => $cart->user->email ?? 'N/A',
-                    'role' => $cart->user->role ?? 'cliente',
-                ],
-                'total_items' => $items->sum('quantity'),
-                'total_price' => $items->sum('subtotal'),
-                'last_updated' => $cart->updated_at->format('d/m/Y H:i:s'),
-                'items' => $items,
-            ];
-        });
-
-        // ✅ Devuelve la respuesta JSON para que React la reciba
-        return response()->json([
-            'success' => true,
-            'data' => $data
-        ]);
-    }
-
-
-
-
 
     /**
-     * Añadir producto al carrito
+     * Ver todos los carritos (admin)
      */
-    public function add(Request $request, $productId)
+    public function adminIndex()
+    {
+        $carts = Cart::with(['user', 'items.product', 'items.pack'])->orderByDesc('updated_at')->get();
+
+        $data = $carts->map(fn($cart) => [
+            'id' => $cart->id,
+            'user' => [
+                'id' => $cart->user->id ?? null,
+                'name' => $cart->user->name ?? 'N/A',
+                'email' => $cart->user->email ?? 'N/A',
+                'role' => $cart->user->role ?? 'cliente',
+            ],
+            'total_items' => $cart->items->sum('quantity'),
+            'total_price' => $cart->items->sum('total_price'),
+            'last_updated' => $cart->updated_at->format('d/m/Y H:i:s'),
+            'items' => $cart->items->map(fn($item) => [
+                'id' => $item->id,
+                'type' => $item->product ? 'product' : 'pack',
+                'name' => $item->product->name ?? $item->pack->title ?? 'N/A',
+                'price' => $item->product->promo_price ?? $item->product->price ?? $item->pack->promo_price ?? $item->pack->original_price ?? 0,
+                'quantity' => $item->quantity,
+                'subtotal' => $item->total_price ?? 0,
+                'image' => optional($item->product ?? $item->pack)->images->sortBy('sort_order')->first()?->image_path,
+            ]),
+        ]);
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * Añadir producto o pack al carrito
+     */
+    public function add(Request $request)
     {
         $request->validate([
-            'quantity' => 'integer|min:1'
+            'type' => 'required|in:product,pack',
+            'id' => 'required|integer',
+            'quantity' => 'integer|min:1',
         ]);
 
         $cart = $this->getCart();
-        $product = Product::findOrFail($productId);
+        $quantity = $request->input('quantity', 1);
 
-        // Obtener item existente o crear uno nuevo
-        $item = CartItem::firstOrNew([
-            'cart_id' => $cart->id,
-            'product_id' => $product->id
-        ]);
+        $itemType = $request->type;
+        $entityId = $request->id;
 
-        // Asegurar relación del producto (evita queries implícitas)
-        $item->setRelation('product', $product);
+        $item = null;
 
-        if (!$item->exists) {
-            $item->quantity = 0;
-            $item->total_price = 0;
+        if ($itemType === 'product') {
+            $product = Product::findOrFail($entityId);
+            $item = CartItem::firstOrNew(['cart_id' => $cart->id, 'product_id' => $product->id]);
+            $item->setRelation('product', $product);
+            $price = $product->promo_price ?? $product->price;
+            $availableStock = $product->quantity - $item->quantity;
+            if ($quantity > $availableStock) return response()->json(['success' => false, 'message' => "Solo quedan {$availableStock} unidades de {$product->name}"], 400);
+        } else {
+            $pack = Pack::findOrFail($entityId);
+            $item = CartItem::firstOrNew(['cart_id' => $cart->id, 'pack_id' => $pack->id]);
+            $item->setRelation('pack', $pack);
+            $price = $pack->promo_price ?? $pack->original_price;
         }
 
-        $quantityToAdd = $request->input('quantity', 1);
+        $newQuantity = min(self::MAX_QUANTITY, ($item->quantity ?? 0) + $quantity);
 
-        // Validar stock disponible
-        $availableStock = $product->quantity - $item->quantity;
-        if ($quantityToAdd > $availableStock) {
-            return response()->json([
-                'success' => false,
-                'message' => "Solo quedan {$availableStock} unidades de {$product->name}."
-            ], 400);
-        }
-
-        $price = $product->promo_price ?? $product->price;
-        $newQuantity = min(self::MAX_QUANTITY, $item->quantity + $quantityToAdd);
-
-        // Validar total máximo del carrito (TOTAL REAL)
+        // Validar total máximo
         if ($this->willExceedTotal($cart, $item, $newQuantity)) {
-            return response()->json([
-                'success' => false,
-                'message' => "No se puede agregar más productos. El total del carrito no puede superar " . self::MAX_TOTAL . "€."
-            ], 400);
+            return response()->json(['success' => false, 'message' => "No se puede agregar más. Total máximo: ".self::MAX_TOTAL."€"], 400);
         }
 
-        // Persistir cambios
         $item->quantity = $newQuantity;
-        $item->total_price = $price * $newQuantity;
-
-        // Reservar producto por 2 días
         $item->reserved_until = now()->addDays(2);
         $item->save();
 
-        // Actualizar timestamp del carrito
         $cart->touch();
-
-        // Notificación al admin (no bloquea la respuesta)
-        Mail::to('decora10.colchon10@gmail.com')
-            ->send(new AdminCartNotification($cart, $product, $quantityToAdd));
 
         return $this->index();
     }
 
-
-
-
     /**
-     * Actualizar cantidad de un producto
+     * Actualizar cantidad
      */
-    public function update(Request $request, $productId)
+    public function update(Request $request)
     {
         $request->validate([
-            'quantity' => 'integer|min:1'
+            'type' => 'required|in:product,pack',
+            'id' => 'required|integer',
+            'quantity' => 'required|integer|min:1',
+        ]);
+
+        $cart = $this->getCart();
+        $quantity = $request->quantity;
+        $type = $request->type;
+        $id = $request->id;
+
+        $item = $cart->items()
+            ->when($type === 'product', fn($q) => $q->where('product_id', $id))
+            ->when($type === 'pack', fn($q) => $q->where('pack_id', $id))
+            ->firstOrFail();
+
+        $price = $item->product ? ($item->product->promo_price ?? $item->product->price) : ($item->pack->promo_price ?? $item->pack->original_price);
+
+        $item->quantity = min(self::MAX_QUANTITY, $quantity);
+
+        if ($this->willExceedTotal($cart, $item, $item->quantity)) {
+            return response()->json(['success' => false, 'message' => "No se puede actualizar. Total máximo: ".self::MAX_TOTAL."€"], 400);
+        }
+
+        $item->save();
+        $cart->touch();
+
+        return $this->index();
+    }
+
+    /**
+     * Remover item
+     */
+    public function remove(Request $request)
+    {
+        $request->validate([
+            'type' => 'required|in:product,pack',
+            'id' => 'required|integer',
         ]);
 
         $cart = $this->getCart();
 
-        $item = $cart->items()
-            ->where('product_id', $productId)
-            ->firstOrFail();
-
-        $product = $item->product;
-
-        // Garantizar relación (consistencia con add)
-        $item->setRelation('product', $product);
-
-        $requestedQuantity = $request->input('quantity', 1);
-
-        // Validar stock disponible
-        if ($requestedQuantity > $product->quantity) {
-            return response()->json([
-                'success' => false,
-                'message' => "Solo hay {$product->quantity} unidades disponibles de {$product->name}"
-            ], 400);
-        }
-
-        $newQuantity = min(self::MAX_QUANTITY, $requestedQuantity);
-        $price = $product->promo_price ?? $product->price;
-
-        // Validar total máximo del carrito (TOTAL REAL)
-        if ($this->willExceedTotal($cart, $item, $newQuantity)) {
-            return response()->json([
-                'success' => false,
-                'message' => "No se puede actualizar la cantidad. El total del carrito no puede superar " . self::MAX_TOTAL . "€."
-            ], 400);
-        }
-
-        // Persistir cambios
-        $item->quantity = $newQuantity;
-        $item->total_price = $price * $newQuantity;
-        $item->save();
-
-        // Actualizar timestamp del carrito
-        $cart->touch();
-
-        // Notificación al admin (silenciosa)
-        Mail::to('decora10.colchon10@gmail.com')
-            ->send(new AdminCartNotification($cart, $product, $newQuantity));
-
-        return $this->index();
-    }
-
-
-
-    /**
-     * Eliminar producto del carrito
-     */
-    public function remove($productId)
-    {
-        $cart = $this->getCart();
-        $cart->items()->where('product_id', $productId)->delete();
+        $cart->items()
+            ->when($request->type === 'product', fn($q) => $q->where('product_id', $request->id))
+            ->when($request->type === 'pack', fn($q) => $q->where('pack_id', $request->id))
+            ->delete();
 
         return $this->index();
     }
@@ -271,9 +211,21 @@ class CartController extends Controller
     {
         $cart = $this->getCart();
         $cart->items()->delete();
-
         return $this->index();
     }
+
+    /**
+     * Chequear total máximo
+     */
+    private function willExceedTotal(Cart $cart, CartItem $item, int $newQuantity): bool
+    {
+        $currentTotal = $cart->items->sum('total_price');
+        $currentItemTotal = $item->exists ? $item->total_price : 0;
+        $price = $item->product ? ($item->product->promo_price ?? $item->product->price) : ($item->pack->promo_price ?? $item->pack->original_price);
+        $newTotal = ($currentTotal - $currentItemTotal) + ($price * $newQuantity);
+        return $newTotal > self::MAX_TOTAL;
+    }
+
 
     /**
      * Obtener total del carrito
@@ -377,19 +329,6 @@ class CartController extends Controller
     /**
      * Chequear si el total del carrito excedería el máximo
      */
-    private function willExceedTotal(Cart $cart, CartItem $item, int $newQuantity): bool
-    {
-        $currentCartTotal = $cart->items()->sum('total_price');
 
-        $currentItemTotal = $item->exists
-            ? $item->total_price
-            : 0;
-
-        $price = $item->product->promo_price ?? $item->product->price;
-
-        $newTotal = ($currentCartTotal - $currentItemTotal) + ($price * $newQuantity);
-
-        return $newTotal > self::MAX_TOTAL;
-    }
 
 }

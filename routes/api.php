@@ -24,6 +24,7 @@ use App\Http\Middleware\CheckUserRole;
 use App\Http\Controllers\Payment\StripeController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\PackController;
 
 
 /*
@@ -157,6 +158,24 @@ Route::prefix('v1')->group(function () {
         Route::get('/orders/revenue-monthly', [OrderController::class, 'getMonthlyRevenue']);
 
     });
+
+    Route::middleware(['auth:sanctum', CheckUserRole::class . ':admin,dueno'])->group(function () {
+
+        // -----------------------------
+        // --- PACKS (ADMIN) ---
+        // -----------------------------
+        Route::get('/packs/admin', [PackController::class, 'indexAdmin']);
+        Route::post('/packs', [PackController::class, 'store']);
+        Route::put('/packs/{id}', [PackController::class, 'update']);
+        Route::delete('/packs/{id}', [PackController::class, 'destroy']);
+
+    });
+    // -----------------------------
+// --- PACKS (PÚBLICO) ---
+// -----------------------------
+    Route::get('/packs', [PackController::class, 'index']);
+    Route::get('/packs/{slug}', [PackController::class, 'show']);
+
 
     Route::get('/products/{productId?}/reviews', [ReviewController::class, 'index']);
     Route::get('/reviews/{id}', [ReviewController::class, 'show']);

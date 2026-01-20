@@ -9,14 +9,24 @@ class CartItem extends Model
 {
     use HasFactory;
 
+    /**
+     * Campos asignables masivamente
+     */
     protected $fillable = [
         'cart_id',
-        'product_id',
+        'product_id', // Producto opcional
+        'pack_id',    // Pack opcional
         'quantity',
+        'reserved_until',
+        'notified_expiry',
     ];
 
+    /**
+     * Conversión de campos a tipos nativos
+     */
     protected $casts = [
         'reserved_until' => 'datetime',
+        'notified_expiry' => 'boolean',
     ];
 
     /**
@@ -28,7 +38,7 @@ class CartItem extends Model
     }
 
     /**
-     * Relación con el producto
+     * Relación con el producto (si existe)
      */
     public function product()
     {
@@ -36,15 +46,33 @@ class CartItem extends Model
     }
 
     /**
-     * Accesor dinámico: total del item
+     * Relación con el pack (si existe)
      */
-    public function getTotalPriceAttribute(): float
+    public function pack()
     {
-        return $this->quantity * ($this->product->promo_price ?? $this->product->price);
+        return $this->belongsTo(Pack::class);
     }
 
     /**
-     * Accesor opcional: subtotal (alias)
+     * Accesor dinámico: total del item (producto o pack)
+     */
+    public function getTotalPriceAttribute(): float
+    {
+        // Producto
+        if ($this->product_id && $this->product) {
+            return $this->quantity * ($this->product->promo_price ?? $this->product->price);
+        }
+
+        // Pack
+        if ($this->pack_id && $this->pack) {
+            return $this->quantity * ($this->pack->promo_price ?? $this->pack->original_price);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Accesor opcional: subtotal (alias de total_price)
      */
     public function getSubtotalAttribute(): float
     {

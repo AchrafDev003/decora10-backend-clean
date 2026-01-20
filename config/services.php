@@ -26,6 +26,11 @@ return [
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],
+    // config/services.php
+    'cloudinary' => [
+        'url' => env('CLOUDINARY_URL'),
+    ],
+
 
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
