@@ -182,19 +182,24 @@ class CartController extends Controller
     public function remove(Request $request)
     {
         $request->validate([
-            'type' => 'required|in:product,pack',
             'id' => 'required|integer',
         ]);
 
         $cart = $this->getCart();
-        $cart->items()
-            ->when($request->type === 'product', fn($q) => $q->where('product_id', $request->id))
-            ->when($request->type === 'pack', fn($q) => $q->where('pack_id', $request->id))
-            ->delete();
+
+        // Intentamos borrar primero como producto
+        $deleted = $cart->items()->where('product_id', $request->id)->delete();
+
+        // Si no se eliminó como producto, borramos como pack
+        if ($deleted === 0) {
+            $cart->items()->where('pack_id', $request->id)->delete();
+        }
 
         $cart->touch();
+
         return $this->index();
     }
+
 
     /**
      * Obtener ajuste de precio según la medida del colchón
