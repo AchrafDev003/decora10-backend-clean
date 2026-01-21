@@ -17,66 +17,52 @@ class PackController extends Controller
             ->only(['store', 'update', 'destroy', 'indexAdmin']);
     }
 
-    // ----------------------------------
-    // Slug único
-    // ----------------------------------
+    /* =====================================
+       Slug único
+    ===================================== */
     private function generateUniqueSlug(string $title, ?int $packId = null): string
     {
-        $baseSlug = Str::slug($title);
+        $base = Str::slug($title);
+        $slug = $base . '-' . substr(md5(uniqid()), 0, 6);
 
-        // Añadimos un sufijo único basado en timestamp + microsegundos
-        $uniqueSuffix = substr(md5(now()->timestamp . rand()), 0, 6);
-
-        $slug = "{$baseSlug}-{$uniqueSuffix}";
-
-        // Opcional: aseguramos que no exista un slug igual solo una vez
-        $exists = Pack::where('slug', $slug)
-            ->when($packId !== null, fn($q) => $q->where('id', '!=', $packId))
-            ->exists();
-
-        if ($exists) {
-            // Si chocara (muy raro), usamos uniqid
-            $slug = "{$baseSlug}-" . uniqid();
-        }
-
-        return $slug;
+        return Pack::where('slug', $slug)
+            ->when($packId, fn ($q) => $q->where('id', '!=', $packId))
+            ->exists()
+            ? $slug . '-' . uniqid()
+            : $slug;
     }
 
-
-
-    // ----------------------------------
-    // Packs activos (público)
-    // ----------------------------------
+    /* =====================================
+       Packs activos (público)
+    ===================================== */
     public function index()
     {
-        $packs = Pack::with(['items', 'images'])
-            ->where('is_active', true)
-            ->where('starts_at', '<=', now())
-            ->where('ends_at', '>=', now())
-            ->orderBy('ends_at')
-            ->get();
-
-        return PackResource::collection($packs);
+        return PackResource::collection(
+            Pack::with('items')
+                ->active()
+                ->orderBy('ends_at')
+                ->get()
+        );
     }
 
-    // ----------------------------------
-    // Mostrar pack por slug
-    // ----------------------------------
+    /* =====================================
+       Mostrar pack por slug
+    ===================================== */
     public function show(string $slug)
     {
-        $pack = Pack::with(['items', 'images'])
+        $pack = Pack::with('items')
             ->where('slug', $slug)
             ->firstOrFail();
 
         return new PackResource($pack);
     }
 
-    // ----------------------------------
-    // Admin index (activos / inactivos)
-    // ----------------------------------
+    /* =====================================
+       Admin index
+    ===================================== */
     public function indexAdmin(Request $request)
     {
-        $query = Pack::with(['items', 'images']);
+        $query = Pack::with('items');
 
         if ($request->filled('is_active')) {
             $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
@@ -84,11 +70,7 @@ class PackController extends Controller
 
         if ($request->filled('status')) {
             match ($request->status) {
-                'active' => $query
-                    ->where('is_active', true)
-                    ->where('starts_at', '<=', now())
-                    ->where('ends_at', '>=', now()),
-
+                'active' => $query->active(),
                 'expired' => $query->where('ends_at', '<', now()),
                 'scheduled' => $query->where('starts_at', '>', now()),
                 default => null,
@@ -100,9 +82,9 @@ class PackController extends Controller
         );
     }
 
-    // ----------------------------------
-    // Crear pack
-    // ----------------------------------
+    /* =====================================
+       Crear pack
+    ===================================== */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -114,59 +96,63 @@ class PackController extends Controller
             'ends_at'        => 'required|date|after:starts_at',
             'is_active'      => 'boolean',
 
-            'items'                => 'array',
-            'items.*.name'         => 'required|string|max:255',
-            'items.*.type'         => 'nullable|string|max:50',
-            'items.*.quantity'     => 'integer|min:1',
+            // Imagen principal del pack
+            'image' => 'required|image|max:4096',
 
-            'images.*'             => 'image|max:4096',
+            // Items
+            'items'                 => 'required|array|min:1',
+            'items.*.name'          => 'required|string|max:255',
+            'items.*.type'          => 'nullable|string|max:50',
+            'items.*.price'         => 'required|numeric|min:0',
+            'items.*.quantity'      => 'integer|min:1',
+            'items.*.image'         => 'required|image|max:4096',
         ]);
 
         DB::beginTransaction();
 
         try {
+            $cloudinary = new Cloudinary(config('services.cloudinary.url'));
+
+            // Imagen del pack
+            $packImage = $cloudinary->uploadApi()->upload(
+                $request->file('image')->getRealPath(),
+                ['folder' => 'packs']
+            );
+
             $pack = Pack::create([
-                ...$validated,
+                'title' => $validated['title'],
                 'slug' => $this->generateUniqueSlug($validated['title']),
+                'description' => $validated['description'] ?? null,
+                'original_price' => $validated['original_price'],
+                'promo_price' => $validated['promo_price'],
+                'starts_at' => $validated['starts_at'],
+                'ends_at' => $validated['ends_at'],
                 'is_active' => $request->boolean('is_active', true),
+                'image_url' => $packImage['secure_url'],
             ]);
 
             // Items
-            foreach ($request->input('items', []) as $index => $item) {
+            foreach ($validated['items'] as $index => $item) {
+                $itemImage = $cloudinary->uploadApi()->upload(
+                    $item['image']->getRealPath(),
+                    ['folder' => 'pack-items']
+                );
+
                 $pack->items()->create([
                     'name' => $item['name'],
                     'type' => $item['type'] ?? null,
+                    'price' => $item['price'],
                     'quantity' => $item['quantity'] ?? 1,
+                    'image_url' => $itemImage['secure_url'],
                     'sort_order' => $index,
                 ]);
-            }
-
-            // Imágenes
-            if ($request->hasFile('images')) {
-                $cloudinary = new Cloudinary(config('services.cloudinary.url'));
-                $position = 0;
-
-                foreach ($request->file('images') as $file) {
-                    $upload = $cloudinary->uploadApi()->upload(
-                        $file->getRealPath(),
-                        ['folder' => 'packs']
-                    );
-
-                    $pack->images()->create([
-                        'image_path' => $upload['secure_url'],
-                        'sort_order' => $position,
-                        'is_main' => $position === 0,
-                    ]);
-
-                    $position++;
-                }
             }
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'data' => new PackResource($pack->load(['items', 'images']))
+                'data' => new PackResource($pack->load('items')),
             ], 201);
 
         } catch (\Throwable $e) {
@@ -179,9 +165,9 @@ class PackController extends Controller
         }
     }
 
-    // ----------------------------------
-    // Actualizar pack
-    // ----------------------------------
+    /* =====================================
+       Actualizar pack
+    ===================================== */
     public function update(Request $request, int $id)
     {
         $pack = Pack::findOrFail($id);
@@ -193,21 +179,19 @@ class PackController extends Controller
                 $pack->slug = $this->generateUniqueSlug($request->title, $pack->id);
             }
 
-            $pack->update(
-                $request->only([
-                    'title',
-                    'description',
-                    'original_price',
-                    'promo_price',
-                    'starts_at',
-                    'ends_at',
-                    'is_active',
-                ])
-            );
+            $pack->update($request->only([
+                'title',
+                'description',
+                'original_price',
+                'promo_price',
+                'starts_at',
+                'ends_at',
+                'is_active',
+            ]));
 
             DB::commit();
 
-            return new PackResource($pack->load(['items', 'images']));
+            return new PackResource($pack->load('items'));
 
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -219,38 +203,17 @@ class PackController extends Controller
         }
     }
 
-    // ----------------------------------
-    // Eliminar pack
-    // ----------------------------------
+    /* =====================================
+       Eliminar pack
+    ===================================== */
     public function destroy(int $id)
     {
-        $pack = Pack::with('images')->findOrFail($id);
+        $pack = Pack::with('items')->findOrFail($id);
+        $pack->delete();
 
-        try {
-            $cloudinary = new Cloudinary(config('services.cloudinary.url'));
-
-            foreach ($pack->images as $img) {
-                if ($img->image_path) {
-                    $publicId = pathinfo(parse_url($img->image_path, PHP_URL_PATH), PATHINFO_FILENAME);
-                    $cloudinary->uploadApi()->destroy("packs/{$publicId}");
-                }
-                $img->delete();
-            }
-
-            $pack->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Pack eliminado correctamente'
-            ]);
-
-        } catch (\Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al eliminar el pack',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Pack eliminado correctamente',
+        ]);
     }
 }
-

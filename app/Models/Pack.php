@@ -13,6 +13,7 @@ class Pack extends Model
         'title',
         'slug',
         'description',
+        'image_url',        // ✅ imagen principal del pack
         'original_price',
         'promo_price',
         'starts_at',
@@ -34,12 +35,8 @@ class Pack extends Model
 
     public function items()
     {
-        return $this->hasMany(PackItem::class);
-    }
-
-    public function images()
-    {
-        return $this->hasMany(PackImage::class);
+        return $this->hasMany(PackItem::class)
+            ->orderBy('sort_order');
     }
 
     /* ======================
@@ -52,5 +49,20 @@ class Pack extends Model
             ->where('is_active', true)
             ->where('starts_at', '<=', now())
             ->where('ends_at', '>=', now());
+    }
+
+    /* ======================
+       Accessors (opcional pero recomendado)
+    ====================== */
+
+    public function getDiscountPercentageAttribute(): int
+    {
+        if ($this->original_price <= 0) {
+            return 0;
+        }
+
+        return (int) round(
+            100 - ($this->promo_price * 100 / $this->original_price)
+        );
     }
 }
