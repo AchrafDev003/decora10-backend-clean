@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use App\Models\Product;
 
 class StoreCartItemRequest extends FormRequest
 {
@@ -21,14 +22,13 @@ class StoreCartItemRequest extends FormRequest
             'type' => ['required', Rule::in(['product','pack'])],
             'quantity' => 'required|integer|min:1|max:5',
             'measure' => [
-                // Si es product, validamos measure según las medidas definidas
                 function ($attribute, $value, $fail) {
                     $type = $this->input('type');
                     $id = $this->input('id');
 
                     if ($type !== 'product') return;
 
-                    $product = \App\Models\Product::find($id);
+                    $product = Product::find($id);
                     if (!$product) {
                         $fail("Producto no encontrado.");
                         return;
@@ -47,6 +47,27 @@ class StoreCartItemRequest extends FormRequest
                     }
                 }
             ],
+            // ✅ Validamos que el frontend envíe el precio calculado
+            'price' => 'required|numeric|min:0',
+            'promo_price' => 'required|numeric|min:0',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'id.required' => 'El producto es obligatorio.',
+            'id.integer' => 'ID del producto inválido.',
+            'type.required' => 'El tipo es obligatorio.',
+            'type.in' => 'El tipo debe ser "product" o "pack".',
+            'quantity.required' => 'La cantidad es obligatoria.',
+            'quantity.integer' => 'La cantidad debe ser un número.',
+            'quantity.min' => 'La cantidad mínima es 1.',
+            'quantity.max' => 'La cantidad máxima es 5.',
+            'price.required' => 'El precio es obligatorio.',
+            'price.numeric' => 'El precio debe ser un número.',
+            'promo_price.required' => 'El precio promocional es obligatorio.',
+            'promo_price.numeric' => 'El precio promocional debe ser un número.',
         ];
     }
 }
