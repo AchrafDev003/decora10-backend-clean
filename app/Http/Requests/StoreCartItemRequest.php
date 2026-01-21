@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
@@ -13,8 +14,11 @@ class StoreCartItemRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'product_id' => 'required|exists:products,id',
+            'id' => 'required|integer', // puede ser product o pack
+            'type' => 'required|in:product,pack',
             'quantity' => 'required|integer|min:1|max:5',
+            'options' => 'array', // opcional: talla, color, variante
+            'options.*' => 'string|nullable',
         ];
     }
 }
