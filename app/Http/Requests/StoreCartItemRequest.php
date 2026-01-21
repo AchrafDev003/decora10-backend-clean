@@ -17,8 +17,7 @@ class StoreCartItemRequest extends FormRequest
             'id' => 'required|integer', // puede ser product o pack
             'type' => 'required|in:product,pack',
             'quantity' => 'required|integer|min:1|max:5',
-            'options' => 'array', // opcional: talla, color, variante
-            'options.*' => 'string|nullable',
+
         ];
     }
 }

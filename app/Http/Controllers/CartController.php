@@ -140,11 +140,19 @@ class CartController extends Controller
             return response()->json(['success' => false, 'message' => "No se puede agregar más. Total máximo: ".self::MAX_TOTAL."€"], 400);
         }
 
+        // Dentro de add()
         $item->quantity = $newQuantity;
+        $price = $item->product
+            ? ($item->product->promo_price ?? $item->product->price)
+            : ($item->pack->promo_price ?? $item->pack->original_price);
+
+// Asignamos total_price
+        $item->total_price = $price * $item->quantity;
+
         $item->reserved_until = now()->addDays(2);
         $item->save();
-
         $cart->touch();
+
 
         return $this->index();
     }
@@ -171,15 +179,26 @@ class CartController extends Controller
             ->firstOrFail();
 
         $price = $item->product ? ($item->product->promo_price ?? $item->product->price) : ($item->pack->promo_price ?? $item->pack->original_price);
-
+// Dentro de update()
         $item->quantity = min(self::MAX_QUANTITY, $quantity);
 
+        $price = $item->product
+            ? ($item->product->promo_price ?? $item->product->price)
+            : ($item->pack->promo_price ?? $item->pack->original_price);
+
+// Asignamos total_price
+        $item->total_price = $price * $item->quantity;
+
         if ($this->willExceedTotal($cart, $item, $item->quantity)) {
-            return response()->json(['success' => false, 'message' => "No se puede actualizar. Total máximo: ".self::MAX_TOTAL."€"], 400);
+            return response()->json([
+                'success' => false,
+                'message' => "No se puede actualizar. Total máximo: " . self::MAX_TOTAL . "€"
+            ], 400);
         }
 
         $item->save();
         $cart->touch();
+
 
         return $this->index();
     }
