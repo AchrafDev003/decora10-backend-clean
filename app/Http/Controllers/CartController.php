@@ -187,18 +187,13 @@ class CartController extends Controller
 
         $cart = $this->getCart();
 
-        // Intentamos borrar primero como producto
-        $deleted = $cart->items()->where('product_id', $request->id)->delete();
-
-        // Si no se eliminó como producto, borramos como pack
-        if ($deleted === 0) {
-            $cart->items()->where('pack_id', $request->id)->delete();
-        }
+        $cart->items()->where('id', $request->id)->delete();
 
         $cart->touch();
 
         return $this->index();
     }
+
 
 
     /**
