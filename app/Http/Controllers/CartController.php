@@ -24,12 +24,13 @@ class CartController extends Controller
     /**
      * Obtener carrito del usuario autenticado
      */
-    private function getCart()
+    private function getCart(): Cart
     {
         $user = Auth::user();
         if (!$user) abort(401, 'Debes iniciar sesión.');
 
-        return Cart::with(['items.product', 'items.pack'])->firstOrCreate(['user_id' => $user->id]);
+        return Cart::with(['items.product', 'items.pack'])
+            ->firstOrCreate(['user_id' => $user->id]);
     }
 
     /**
@@ -39,29 +40,27 @@ class CartController extends Controller
     {
         $cart = $this->getCart();
 
-        $items = $cart->items->map(function ($item) {
-            $type = $item->product ? 'product' : 'pack';
+        $items = $cart->items->map(function (CartItem $item) {
             $entity = $item->product ?? $item->pack;
 
             $price = $item->product
                 ? ($item->product->category?->id === 76
                     ? ($item->product->promo_price ?? $item->product->price) + $this->getMeasurePriceAdjustment($item->measure)
-                    : $item->product->promo_price ?? $item->product->price)
+                    : ($item->product->promo_price ?? $item->product->price))
                 : ($item->pack->promo_price ?? $item->pack->original_price);
 
             return [
                 'id' => $item->id,
-                'type' => $type,
+                'type' => $item->product ? 'product' : 'pack',
                 'entity_id' => $entity->id,
                 'name' => $entity->name ?? $entity->title,
                 'price' => (float) $price,
                 'quantity' => $item->quantity,
                 'subtotal' => (float) $item->total_price,
-                'measure' => $item->measure ?? null,
-                'image' => optional($entity->images->sortBy('sort_order')->first())->image_path ?? null,
+                'measure' => $item->measure,
                 'images' => $entity->images
                     ->sortBy('sort_order')
-                    ->map(fn($img) => ['image_path' => $img->image_path])
+                    ->map(fn ($img) => ['image_path' => $img->image_path])
                     ->values(),
             ];
         });
@@ -76,7 +75,8 @@ class CartController extends Controller
     }
 
     /**
-     * Añadir producto o pack al carrito
+     * Añadir producto o pack
+     * POST /cart/items
      */
     public function add(Request $request)
     {
@@ -89,48 +89,42 @@ class CartController extends Controller
 
         $cart = $this->getCart();
         $quantity = $request->input('quantity', 1);
-        $measure = $request->input('measure');
-        $itemType = $request->type;
-        $entityId = $request->id;
+        $measure = $request->measure;
 
-        if ($itemType === 'product') {
-            $product = Product::findOrFail($entityId);
+        if ($request->type === 'product') {
+            $product = Product::findOrFail($request->id);
+
             $item = CartItem::firstOrNew([
                 'cart_id' => $cart->id,
                 'product_id' => $product->id,
                 'measure' => $measure,
             ]);
-            $item->setRelation('product', $product);
 
-            $price = ($product->category?->id === 76
+            $price = $product->category?->id === 76
                 ? ($product->promo_price ?? $product->price) + $this->getMeasurePriceAdjustment($measure)
-                : $product->promo_price ?? $product->price);
-
-            $availableStock = $product->quantity - ($item->quantity ?? 0);
-            if ($quantity > $availableStock) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Solo quedan {$availableStock} unidades de {$product->name}"
-                ], 400);
-            }
+                : ($product->promo_price ?? $product->price);
         } else {
-            $pack = Pack::findOrFail($entityId);
+            $pack = Pack::findOrFail($request->id);
+
             $item = CartItem::firstOrNew([
                 'cart_id' => $cart->id,
-                'pack_id' => $pack->id
+                'pack_id' => $pack->id,
             ]);
-            $item->setRelation('pack', $pack);
+
             $price = $pack->promo_price ?? $pack->original_price;
         }
 
         $newQuantity = min(self::MAX_QUANTITY, ($item->quantity ?? 0) + $quantity);
 
         if ($this->willExceedTotal($cart, $item, $newQuantity, $price)) {
-            return response()->json(['success' => false, 'message' => "No se puede agregar más. Total máximo: " . self::MAX_TOTAL . "€"], 400);
+            return response()->json([
+                'success' => false,
+                'message' => 'Total máximo permitido: ' . self::MAX_TOTAL . '€'
+            ], 400);
         }
 
         $item->quantity = $newQuantity;
-        $item->total_price = $price * $item->quantity;
+        $item->total_price = $price * $newQuantity;
         $item->measure = $measure;
         $item->reserved_until = now()->addDays(2);
         $item->save();
@@ -142,67 +136,56 @@ class CartController extends Controller
 
     /**
      * Actualizar cantidad
+     * PUT /cart/items/{item}
      */
-    public function update(Request $request)
+    public function update(Request $request, CartItem $item)
     {
         $request->validate([
-            'type' => 'required|in:product,pack',
-            'id' => 'required|integer',
-            'quantity' => 'required|integer|min:1',
+            'quantity' => 'required|integer|min:1|max:' . self::MAX_QUANTITY,
             'measure' => 'nullable|string',
         ]);
 
         $cart = $this->getCart();
-        $quantity = $request->quantity;
-        $measure = $request->input('measure');
 
-        $item = $cart->items()
-            ->when($request->type === 'product', fn($q) => $q->where('product_id', $request->id))
-            ->when($request->type === 'pack', fn($q) => $q->where('pack_id', $request->id))
-            ->firstOrFail();
+        abort_unless($item->cart_id === $cart->id, 403);
+
+        $measure = $request->measure ?? $item->measure;
 
         $price = $item->product
             ? ($item->product->category?->id === 76
                 ? ($item->product->promo_price ?? $item->product->price) + $this->getMeasurePriceAdjustment($measure)
-                : $item->product->promo_price ?? $item->product->price)
+                : ($item->product->promo_price ?? $item->product->price))
             : ($item->pack->promo_price ?? $item->pack->original_price);
 
-        $item->quantity = min(self::MAX_QUANTITY, $quantity);
-        $item->total_price = $price * $item->quantity;
-        $item->measure = $measure;
-        $item->save();
-        $cart->touch();
+        if ($this->willExceedTotal($cart, $item, $request->quantity, $price)) {
+            return response()->json(['success' => false, 'message' => 'Total máximo superado'], 400);
+        }
 
-        return $this->index();
-    }
-
-    /**
-     * Remover item
-     */
-    public function remove(Request $request)
-    {
-        $request->validate([
-            'id' => 'required|integer',
+        $item->update([
+            'quantity' => $request->quantity,
+            'measure' => $measure,
+            'total_price' => $price * $request->quantity,
         ]);
 
-        $cart = $this->getCart();
-
-        $cart->items()->where('id', $request->id)->delete();
-
         $cart->touch();
 
         return $this->index();
     }
 
-
-
     /**
-     * Obtener ajuste de precio según la medida del colchón
+     * Eliminar item
+     * DELETE /cart/items/{item}
      */
-    private function getMeasurePriceAdjustment(?string $measure): float
+    public function remove(CartItem $item)
     {
-        if (!$measure) return 0;
-        return self::MEASURE_ADJUST[$measure] ?? 0;
+        $cart = $this->getCart();
+
+        abort_unless($item->cart_id === $cart->id, 403);
+
+        $item->delete();
+        $cart->touch();
+
+        return $this->index();
     }
 
     /**
@@ -216,6 +199,39 @@ class CartController extends Controller
     }
 
     /**
+     * Total del carrito
+     */
+    public function total()
+    {
+        $cart = $this->getCart();
+        return response()->json([
+            'success' => true,
+            'data' => ['total' => $cart->items->sum('total_price')],
+        ]);
+    }
+
+    /**
+     * Ajuste por medida
+     */
+    private function getMeasurePriceAdjustment(?string $measure): float
+    {
+        return self::MEASURE_ADJUST[$measure] ?? 0;
+    }
+
+    /**
+     * Control total máximo
+     */
+    private function willExceedTotal(Cart $cart, CartItem $item, int $newQuantity, float $price): bool
+    {
+        $currentTotal = $cart->items->sum('total_price');
+        $currentItemTotal = $item->exists ? $item->total_price : 0;
+        $newTotal = ($currentTotal - $currentItemTotal) + ($price * $newQuantity);
+        return $newTotal > self::MAX_TOTAL;
+    }
+
+
+
+/**
      * Carrito completo para admin
      */
     public function adminIndex()
@@ -251,27 +267,8 @@ class CartController extends Controller
         return response()->json(['success' => true, 'data' => $data]);
     }
 
-    /**
-     * Chequear total máximo
-     */
-    private function willExceedTotal(Cart $cart, CartItem $item, int $newQuantity, float $price): bool
-    {
-        $currentTotal = $cart->items->sum('total_price');
-        $currentItemTotal = $item->exists ? $item->total_price : 0;
-        $newTotal = ($currentTotal - $currentItemTotal) + ($price * $newQuantity);
-        return $newTotal > self::MAX_TOTAL;
-    }
 
-    /**
-     * Obtener total del carrito
-     */
-    public function total()
-    {
-        $cart = $this->getCart();
-        $total = $cart->items->sum('total_price');
 
-        return response()->json(['success' => true, 'data' => ['total' => $total]]);
-    }
 
     /**
      * Checkout del carrito
@@ -288,7 +285,8 @@ class CartController extends Controller
             return response()->json(['success'=>false,'error'=>'Carrito vacío']);
         }
 
-        $cartItems = $cart->items()->with('product')->get();
+        $cartItems = $cart->items()->with(['product', 'pack'])->get();
+
         $cartProducts = $cartItems->pluck('product_id')->toArray();
         $total = $cartItems->sum(fn($item) =>
             ($item->product->category?->id === 76

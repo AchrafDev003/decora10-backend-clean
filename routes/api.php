@@ -204,15 +204,18 @@ Route::prefix('v1')->group(function () {
         // Cart
         // --------------------------
         Route::prefix('cart')->group(function () {
-            Route::get('/', [CartController::class, 'index']);
-            // View cart
-            Route::post('/items/{productId}', [CartController::class, 'add']);    // Add item
-            Route::put('/items/{productId}', [CartController::class, 'update']);  // Update quantity
-            Route::delete('/items/{productId}', [CartController::class, 'remove']); // Remove item
-            Route::delete('/', [CartController::class, 'empty']);                 // Empty cart
-            Route::get('/total', [CartController::class, 'total']);               // Cart total
-            Route::post('/checkout', [CartController::class, 'checkout']);        // Checkout
+
+            Route::get('/', [CartController::class, 'index']);          // Ver carrito
+            Route::get('/total', [CartController::class, 'total']);    // Total
+
+            Route::post('/items', [CartController::class, 'add']);     // Añadir item
+            Route::put('/items/{item}', [CartController::class, 'update']); // Actualizar item
+            Route::delete('/items/{item}', [CartController::class, 'remove']); // Eliminar item
+
+            Route::delete('/', [CartController::class, 'empty']);      // Vaciar carrito
+            Route::post('/checkout', [CartController::class, 'checkout']);
         });
+
 
         // --------------------------
         // Favorites
