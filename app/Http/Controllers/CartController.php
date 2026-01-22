@@ -43,11 +43,20 @@ class CartController extends Controller
         $items = $cart->items->map(function (CartItem $item) {
             $entity = $item->product ?? $item->pack;
 
+            // ------------------- Precio unitario -------------------
             $price = $item->product
-                ? ($item->product->category?->id === 76
-                    ? ($item->product->promo_price ?? $item->product->price) + $this->getMeasurePriceAdjustment($item->measure)
-                    : ($item->product->promo_price ?? $item->product->price))
+                ? (
+                $item->product->category?->id === 76
+                    ? ($item->product->promo_price ?? $item->product->price)
+                    + $this->getMeasurePriceAdjustment($item->measure)
+                    : ($item->product->promo_price ?? $item->product->price)
+                )
                 : ($item->pack->promo_price ?? $item->pack->original_price);
+
+            // ------------------- Tipo logístico -------------------
+            $logisticType = $item->product
+                ? ($item->product->logistic_type ?? 'small')
+                : ($item->pack->logistic_type ?? 'small');
 
             return [
                 'id' => $item->id,
@@ -58,9 +67,15 @@ class CartController extends Controller
                 'quantity' => $item->quantity,
                 'subtotal' => (float) $item->total_price,
                 'measure' => $item->measure,
+
+                // 🔥 CLAVE PARA CHECKOUT
+                'logistic_type' => $logisticType,
+
                 'images' => $entity->images
                     ->sortBy('sort_order')
-                    ->map(fn ($img) => ['image_path' => $img->image_path])
+                    ->map(fn ($img) => [
+                        'image_path' => $img->image_path,
+                    ])
                     ->values(),
             ];
         });
@@ -73,6 +88,7 @@ class CartController extends Controller
             ],
         ]);
     }
+
 
     /**
      * Añadir producto o pack
