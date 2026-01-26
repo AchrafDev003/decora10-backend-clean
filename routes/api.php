@@ -159,6 +159,9 @@ Route::prefix('v1')->group(function () {
 
     });
 
+    //Packs
+    Route::get('/packs/limited', [PackController::class, 'limited']);
+
     Route::middleware(['auth:sanctum', CheckUserRole::class . ':admin,dueno'])->group(function () {
 
         // -----------------------------

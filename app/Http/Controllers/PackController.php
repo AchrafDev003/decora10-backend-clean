@@ -45,6 +45,18 @@ class PackController extends Controller
         );
     }
 
+    // Endpoint para packs limitados
+    public function limited()
+    {
+        // Traemos solo packs activos, ordenados por fecha de fin
+        $packs = Pack::with('items')
+            ->active()            // scopeActive() en el modelo
+            ->orderBy('ends_at', 'asc')
+            ->get();
+
+        return PackResource::collection($packs);
+    }
+
     /* =====================================
        Mostrar pack por slug
     ===================================== */
