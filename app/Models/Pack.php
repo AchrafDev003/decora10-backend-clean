@@ -44,11 +44,13 @@ class Pack extends Model
     ====================== */
 
     public function scopeActive($query)
+
     {
-        return $query
+        return $query->where('is_active', 1);
+        /*return $query
             ->where('is_active', true)
             ->where('starts_at', '<=', now())
-            ->where('ends_at', '>=', now());
+            ->where('ends_at', '>=', now());*/
     }
 
     /* ======================
