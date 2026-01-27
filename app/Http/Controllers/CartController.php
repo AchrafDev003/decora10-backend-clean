@@ -71,12 +71,12 @@ class CartController extends Controller
                 // 🔥 CLAVE PARA CHECKOUT
                 'logistic_type' => $logisticType,
 
-                'images' => $entity->images
-                    ->sortBy('sort_order')
-                    ->map(fn ($img) => [
-                        'image_path' => $img->image_path,
-                    ])
-                    ->values(),
+                // ✅ IMAGEN CORRECTA SEGÚN TIPO
+                'image' => $item->product
+                    ? $item->product->images
+                        ->sortBy('sort_order')
+                        ->first()?->image_path
+                    : $item->pack->image_url,
             ];
         });
 
@@ -88,6 +88,7 @@ class CartController extends Controller
             ],
         ]);
     }
+
 
 
     /**

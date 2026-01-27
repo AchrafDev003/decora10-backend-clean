@@ -32,6 +32,30 @@ class PackController extends Controller
             : $slug;
     }
 
+
+    private function deleteCloudinaryImage(?string $url): void
+    {
+        if (!$url) return;
+
+        try {
+            $cloudinary = new Cloudinary(config('services.cloudinary.url'));
+
+            // Extraer public_id desde la URL
+            $path = parse_url($url, PHP_URL_PATH);
+            $path = ltrim($path, '/');
+            $path = preg_replace('#^image/upload/v\d+/#', '', $path);
+            $publicId = preg_replace('/\.[^.]+$/', '', $path);
+
+            $cloudinary->uploadApi()->destroy($publicId);
+        } catch (\Throwable $e) {
+            logger()->warning('Cloudinary delete failed', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+
     /* =====================================
        Packs activos (público)
     ===================================== */
@@ -223,11 +247,36 @@ class PackController extends Controller
     public function destroy(int $id)
     {
         $pack = Pack::with('items')->findOrFail($id);
-        $pack->delete();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Pack eliminado correctamente',
-        ]);
+        DB::beginTransaction();
+
+        try {
+            // 🧹 Borrar imagen principal del pack
+            $this->deleteCloudinaryImage($pack->image_url);
+
+            // 🧹 Borrar imágenes de los items
+            foreach ($pack->items as $item) {
+                $this->deleteCloudinaryImage($item->image_url);
+            }
+
+            // 🗑️ Borrar pack (cascade items si está configurado)
+            $pack->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pack e imágenes eliminados correctamente',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar el pack',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
+
 }

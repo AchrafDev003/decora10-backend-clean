@@ -22,10 +22,10 @@ class Cart extends Model
         return $this->belongsTo(User::class);
     }
     // app/Models/Cart.php
-    public function cartItems()
+    /*public function cartItems()
     {
         return $this->hasMany(CartItem::class);
-    }
+    }*/
 
 
     /**
@@ -41,8 +41,24 @@ class Cart extends Model
      */
     public function getTotalAttribute(): float
     {
-        return $this->items->sum(fn($item) => $item->quantity * ($item->product->promo_price ?? $item->product->price));
+        return $this->items->sum(function ($item) {
+
+            if ($item->product) {
+                return $item->quantity * (
+                        $item->product->promo_price ?? $item->product->price
+                    );
+            }
+
+            if ($item->pack) {
+                return $item->quantity * (
+                        $item->pack->promo_price ?? $item->pack->original_price
+                    );
+            }
+
+            return 0;
+        });
     }
+
 
     /**
      * Ver si el carrito supera un límite de valor

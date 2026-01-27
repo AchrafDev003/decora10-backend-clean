@@ -40,6 +40,11 @@ class Pack extends Model
         return $this->hasMany(PackItem::class)
             ->orderBy('sort_order');
     }
+    public function images()
+    {
+        return $this->hasMany(PackImage::class);
+    }
+
 
     /* ======================
        Scopes
