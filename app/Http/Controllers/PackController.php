@@ -107,11 +107,10 @@ class PackController extends Controller
             'starts_at'      => 'required|date',
             'ends_at'        => 'required|date|after:starts_at',
             'is_active'      => 'boolean',
+            'requires_measure' => 'boolean', // ✅ NUEVO
 
-            // Imagen principal del pack
             'image' => 'required|image|max:4096',
 
-            // Items
             'items'                 => 'required|array|min:1',
             'items.*.name'          => 'required|string|max:255',
             'items.*.type'          => 'nullable|string|max:50',
@@ -140,8 +139,10 @@ class PackController extends Controller
                 'starts_at' => $validated['starts_at'],
                 'ends_at' => $validated['ends_at'],
                 'is_active' => $request->boolean('is_active', true),
+                'requires_measure' => $request->boolean('requires_measure', false), // ✅
                 'image_url' => $packImage['secure_url'],
             ]);
+
 
             // Items
             foreach ($validated['items'] as $index => $item) {
@@ -199,6 +200,7 @@ class PackController extends Controller
                 'starts_at',
                 'ends_at',
                 'is_active',
+                'requires_measure', // ✅
             ]));
 
             DB::commit();

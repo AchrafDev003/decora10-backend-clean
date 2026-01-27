@@ -13,18 +13,20 @@ class Pack extends Model
         'title',
         'slug',
         'description',
-        'image_url',        // ✅ imagen principal del pack
+        'image_url',
         'original_price',
         'promo_price',
         'starts_at',
         'ends_at',
         'is_active',
+        'requires_measure', // ✅ NUEVO
     ];
 
     protected $casts = [
         'starts_at' => 'datetime',
         'ends_at'   => 'datetime',
         'is_active' => 'boolean',
+        'requires_measure' => 'boolean', // ✅ CAST
         'original_price' => 'decimal:2',
         'promo_price'    => 'decimal:2',
     ];
@@ -57,6 +59,10 @@ class Pack extends Model
        Accessors (opcional pero recomendado)
     ====================== */
 
+    /* ======================
+       Accessors
+    ====================== */
+
     public function getDiscountPercentageAttribute(): int
     {
         if ($this->original_price <= 0) {
@@ -67,4 +73,12 @@ class Pack extends Model
             100 - ($this->promo_price * 100 / $this->original_price)
         );
     }
+
+    // ✅ Semántico, muy útil en controladores
+    public function requiresMeasure(): bool
+    {
+        return (bool) $this->requires_measure;
+    }
+
+
 }
