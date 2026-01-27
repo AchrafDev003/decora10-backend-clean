@@ -20,6 +20,7 @@ class Pack extends Model
         'ends_at',
         'is_active',
         'requires_measure', // ✅ NUEVO
+        'logistic_type', // ✅ NUEVO
     ];
 
     protected $casts = [
@@ -40,10 +41,7 @@ class Pack extends Model
         return $this->hasMany(PackItem::class)
             ->orderBy('sort_order');
     }
-    public function images()
-    {
-        return $this->hasMany(PackImage::class);
-    }
+
 
 
     /* ======================

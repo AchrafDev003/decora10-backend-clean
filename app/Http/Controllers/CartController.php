@@ -56,7 +56,8 @@ class CartController extends Controller
             // ------------------- Tipo logístico -------------------
             $logisticType = $item->product
                 ? ($item->product->logistic_type ?? 'small')
-                : ($item->pack->logistic_type ?? 'small');
+                : ($item->pack->logistic_type ?? 'heavy'); // ✅ ahora todos packs son heavy
+
 
             return [
                 'id' => $item->id,
