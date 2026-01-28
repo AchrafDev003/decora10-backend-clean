@@ -137,6 +137,7 @@ class PackController extends Controller
 
             'items'                 => 'required|array|min:1',
             'items.*.name'          => 'required|string|max:255',
+            'items.*.description'      => 'nullable|string',          // ✅ NUEVO
             'items.*.type'          => 'nullable|string|max:50',
             'items.*.price'         => 'required|numeric|min:0',
             'items.*.quantity'      => 'integer|min:1',
@@ -177,6 +178,7 @@ class PackController extends Controller
 
                 $pack->items()->create([
                     'name' => $item['name'],
+                    'description' => $item['description'] ?? null, // ✅
                     'type' => $item['type'] ?? null,
                     'price' => $item['price'],
                     'quantity' => $item['quantity'] ?? 1,
@@ -207,15 +209,58 @@ class PackController extends Controller
     ===================================== */
     public function update(Request $request, int $id)
     {
-        $pack = Pack::findOrFail($id);
+        $pack = Pack::with('items')->findOrFail($id);
+
+        $validated = $request->validate([
+            'title'             => 'sometimes|required|string|max:255',
+            'description'       => 'nullable|string',
+            'original_price'    => 'sometimes|required|numeric|min:0',
+            'promo_price'       => 'sometimes|required|numeric|min:0|lte:original_price',
+            'starts_at'         => 'sometimes|required|date',
+            'ends_at'           => 'sometimes|required|date|after:starts_at',
+            'is_active'         => 'boolean',
+            'requires_measure'  => 'boolean',
+
+            'image' => 'nullable|image|max:4096',
+
+            'items'                    => 'nullable|array|min:1',
+            'items.*.id'               => 'nullable|exists:pack_items,id',
+            'items.*.name'             => 'required|string|max:255',
+            'items.*.description'      => 'nullable|string',
+            'items.*.type'             => 'nullable|string|max:50',
+            'items.*.price'            => 'required|numeric|min:0',
+            'items.*.quantity'         => 'nullable|integer|min:1',
+            'items.*.image'            => 'nullable|image|max:4096',
+        ]);
 
         DB::beginTransaction();
 
         try {
+            $cloudinary = new Cloudinary(config('services.cloudinary.url'));
+
+            /* =====================
+               Imagen del pack
+            ===================== */
+            if ($request->hasFile('image')) {
+                // (opcional) borrar imagen antigua si guardas public_id
+                $packImage = $cloudinary->uploadApi()->upload(
+                    $request->file('image')->getRealPath(),
+                    ['folder' => 'packs']
+                );
+
+                $pack->image_url = $packImage['secure_url'];
+            }
+
+            /* =====================
+               Slug
+            ===================== */
             if ($request->filled('title')) {
                 $pack->slug = $this->generateUniqueSlug($request->title, $pack->id);
             }
 
+            /* =====================
+               Update pack
+            ===================== */
             $pack->update($request->only([
                 'title',
                 'description',
@@ -224,22 +269,74 @@ class PackController extends Controller
                 'starts_at',
                 'ends_at',
                 'is_active',
-                'requires_measure', // ✅
+                'requires_measure',
             ]));
+
+            /* =====================
+               Sync items
+            ===================== */
+            if (!empty($validated['items'])) {
+
+                $incomingIds = collect($validated['items'])
+                    ->pluck('id')
+                    ->filter()
+                    ->toArray();
+
+                // Eliminar items que ya no existen
+                $pack->items()
+                    ->whereNotIn('id', $incomingIds)
+                    ->delete();
+
+                foreach ($validated['items'] as $index => $item) {
+
+                    $data = [
+                        'name'        => $item['name'],
+                        'description' => $item['description'] ?? null,
+                        'type'        => $item['type'] ?? null,
+                        'price'       => $item['price'],
+                        'quantity'    => $item['quantity'] ?? 1,
+                        'sort_order'  => $index,
+                    ];
+
+                    // Nueva imagen de item
+                    if (!empty($item['image'])) {
+                        $itemImage = $cloudinary->uploadApi()->upload(
+                            $item['image']->getRealPath(),
+                            ['folder' => 'pack-items']
+                        );
+                        $data['image_url'] = $itemImage['secure_url'];
+                    }
+
+                    if (!empty($item['id'])) {
+                        // Update item existente
+                        $pack->items()
+                            ->where('id', $item['id'])
+                            ->update($data);
+                    } else {
+                        // Crear nuevo item
+                        $pack->items()->create($data);
+                    }
+                }
+            }
 
             DB::commit();
 
-            return new PackResource($pack->load('items'));
+            return response()->json([
+                'success' => true,
+                'data'    => new PackResource($pack->load('items')),
+            ]);
 
         } catch (\Throwable $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error al actualizar el pack',
-                'error' => $e->getMessage(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
+
 
     /* =====================================
        Eliminar pack

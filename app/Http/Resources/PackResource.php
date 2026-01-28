@@ -25,11 +25,11 @@ class PackResource extends JsonResource
 
             // ---------------- Contenido ----------------
             'description' => $this->description,
-            'image'       => $this->image_url,
+            'image_url'   => $this->image_url,
 
             // ---------------- Precios ----------------
-            'original_price' => (float) $this->original_price,
-            'promo_price'    => (float) $this->promo_price,
+            'original_price'      => (float) $this->original_price,
+            'promo_price'         => (float) $this->promo_price,
             'discount_percentage' => $this->discount_percentage,
 
             // ---------------- Medidas ----------------
@@ -44,16 +44,19 @@ class PackResource extends JsonResource
             'status'    => $status,
 
             // ---------------- Items ----------------
-            'items' => $this->whenLoaded('items', fn () =>
-            $this->items->map(fn ($item) => [
-                'id'       => $item->id,
-                'name'     => $item->name,
-                'type'     => $item->type,
-                'price'    => (float) $item->price,
-                'quantity' => (int) $item->quantity,
-                'image'    => $item->image_url,
-            ])
-            ),
+            'items' => $this->whenLoaded('items', function () {
+                return $this->items->map(function ($item) {
+                    return [
+                        'id'          => $item->id,
+                        'name'        => $item->name,
+                        'description' => $item->description, // ✅ NUEVO
+                        'type'        => $item->type,
+                        'price'       => (float) $item->price,
+                        'quantity'    => (int) $item->quantity,
+                        'image_url'   => $item->image_url,
+                    ];
+                });
+            }),
 
             // ---------------- Timestamps ----------------
             'created_at' => $this->created_at?->toISOString(),

@@ -12,6 +12,7 @@ class PackItem extends Model
     protected $fillable = [
         'pack_id',
         'name',
+        'description',   // ✅ NUEVO
         'type',
         'price',        // ✅ precio individual del item
         'image_url',    // ✅ imagen del item
