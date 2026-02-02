@@ -1,29 +1,20 @@
 <?php
 
 namespace App\Http\Controllers;
+
 use App\Http\Requests\UpdateOrderRequest;
 use Illuminate\Support\Facades\Log;
-
-use Illuminate\Http\Request; //
-use App\Http\Controllers\Payment\StripeController;
-use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\OrderStatusHistory;
-use App\Models\Cart;
-use App\Models\NewsletterSubscription;
-use App\Models\Address;
-use App\Models\Product;
-use App\Models\Payment;
-use App\Models\Coupon;
-use App\Http\Requests\StoreOrderRequest;
+use Illuminate\Http\Request;
+use App\Models\{
+    Order, OrderItem, OrderStatusHistory, Cart,
+    NewsletterSubscription, Address, Product, Payment, Coupon
+};
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Mail;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Mail\OrderConfirmation;
-use App\Services\StripeService;
 
 class OrderController extends Controller
 {
@@ -32,109 +23,95 @@ class OrderController extends Controller
         $this->middleware('auth:sanctum');
     }
 
+    // ==========================
     // Mostrar todos los pedidos
+    // ==========================
     public function index(Request $request)
     {
         $query = Order::with('user', 'orderItems.product', 'address');
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
-        if ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
-        }
+        if ($request->filled('status')) $query->where('status', $request->status);
+        if ($request->filled('date_from')) $query->whereDate('created_at', '>=', $request->date_from);
+        if ($request->filled('date_to')) $query->whereDate('created_at', '<=', $request->date_to);
 
         if ($request->filled('q')) {
             $search = $request->q;
             $query->where(function($q) use ($search) {
                 $q->where('id', $search)
-                    ->orWhereHas('user', function($q2) use ($search) {
-                        $q2->where('name', 'like', "%{$search}%");
-                    });
+                    ->orWhereHas('user', fn($q2) => $q2->where('name', 'like', "%{$search}%"));
             });
         }
 
-        $perPage = $request->get('per_page', 10);
-        $orders = $query->orderBy('created_at', 'desc')->paginate($perPage);
-
+        $orders = $query->orderBy('created_at', 'desc')->paginate($request->get('per_page', 10));
         return response()->json($orders);
     }
 
+    // ==========================
     // Mostrar un pedido específico
+    // ==========================
     public function show($id)
     {
         $order = Order::with('orderItems.product', 'statusHistory', 'address')->findOrFail($id);
-        return response()->json(['order' => $order]);
+
+        $orderArray = $order->toArray(); // Usamos toArray alineado
+        return response()->json(['order' => $orderArray]);
     }
 
-    // Mostrar todos los pedidos para admin o dueño (ERP)
+    // ==========================
+    // Pedidos admin/ERP
+    // ==========================
     public function adminOrders(Request $request)
     {
-        // Solo usuarios con rol admin o dueño deberían acceder (ya lo controla el middleware)
-        $query = Order::with(['user', 'orderItems.product', 'address'])
-            ->orderBy('created_at', 'desc');
+        $query = Order::with(['user','orderItems.product','address'])->orderBy('created_at','desc');
 
-        // Filtros opcionales
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
+        if ($request->filled('status')) $query->where('status', $request->status);
+        if ($request->filled('date_from')) $query->whereDate('created_at','>=',$request->date_from);
+        if ($request->filled('date_to')) $query->whereDate('created_at','<=',$request->date_to);
         if ($request->filled('q')) {
             $search = $request->q;
-            $query->where(function ($q) use ($search) {
-                $q->where('id', $search)
-                    ->orWhere('order_code', 'like', "%{$search}%")
-                    ->orWhereHas('user', function ($q2) use ($search) {
-                        $q2->where('name', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    });
+            $query->where(function($q) use ($search){
+                $q->where('id',$search)
+                    ->orWhere('order_code','like',"%{$search}%")
+                    ->orWhereHas('user', fn($q2) => $q2->where('name','like',"%{$search}%")
+                        ->orWhere('email','like',"%{$search}%"));
             });
         }
-        if ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
-        if ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
-        }
 
-        $perPage = $request->get('per_page', 10);
-        $orders = $query->paginate($perPage);
+        $orders = $query->paginate($request->get('per_page',10));
 
-        // Estructurar datos compatibles con React (tabla ERP)
-        $data = $orders->getCollection()->transform(function ($order) {
-            return [
-                'id' => $order->id,
-                'order_code' => $order->order_code,
-                'user' => [
-                    'id' => $order->user->id ?? null,
-                    'name' => $order->user->name ?? 'N/A',
-                    'email' => $order->user->email ?? 'N/A',
-                ],
-                'total' => $order->total,
-                'discount' => $order->discount,
-                'status' => $order->status,
-                'shipping_address' => $order->shipping_address,
-                'payment_method' => $order->payment_method,
-                'tracking_number' => $order->tracking_number,
-                'courier' => $order->courier,
-                'mobile1' => $order->mobile1,
-                'mobile2' => $order->mobile2,
-                'estimated_delivery_date' => $order->estimated_delivery_date,
-                'created_at' => $order->created_at,
-                'updated_at' => $order->updated_at,
-                'items' => $order->orderItems->map(function ($item) {
-                    return [
-                        'id' => $item->id,
-                        'product_name' => $item->product->name ?? 'Producto eliminado',
-                        'quantity' => $item->quantity,
-                        'price' => $item->price,
-                    ];
-                }),
-            ];
-        });
+        $data = $orders->getCollection()->transform(fn($order) => [
+            'id' => $order->id,
+            'order_code' => $order->order_code,
+            'user' => [
+                'id' => $order->user->id ?? null,
+                'name' => $order->user->name ?? 'N/A',
+                'email' => $order->user->email ?? 'N/A',
+            ],
+            'total' => $order->total,
+            'discount' => $order->discount,
+            'status' => $order->status,
+            'shipping_address' => $order->shipping_address,
+            'payment_method' => $order->payment_method,
+            'tracking_number' => $order->tracking_number,
+            'courier' => $order->courier,
+            'mobile1' => $order->mobile1,
+            'mobile2' => $order->mobile2,
+            'estimated_delivery_date' => $order->estimated_delivery_date,
+            'created_at' => $order->created_at,
+            'updated_at' => $order->updated_at,
+            'items' => $order->orderItems->map(fn($item) => [
+                'id' => $item->id,
+                'product_id' => $item->product_id,
+                'pack_id' => $item->pack_id ?? null,
+                'product_name' => $item->product_name
+                    ?? ($item->product_id ? $item->product->name : null)
+                        ?? ($item->pack_id ? $item->pack->name : 'Item eliminado'),
+                'quantity' => $item->quantity,
+                'price' => $item->price,
+                'subtotal' => $item->subtotal,
+                'profit' => $item->profit,
+            ]),
+        ]);
 
         return response()->json([
             'success' => true,
@@ -145,137 +122,188 @@ class OrderController extends Controller
         ]);
     }
 
-
-    // Crear un nuevo pedido
+    // ==========================
+    // Crear un pedido
+    // ==========================
     public function store(Request $request)
     {
         $user = auth()->user();
 
-        // ------------------- Validar payload -------------------
         $validated = $request->validate([
-            'payment_method' => 'required|string|in:card,paypal,cash,bizum',
-            'line1' => 'required|string',
-            'city' => 'required|string',
-            'country' => 'required|string',
-            'mobile1' => 'required|string',
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|integer',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.price' => 'required|numeric|min:0',
-            'subtotal' => 'required|numeric|min:0',
-            'discount' => 'nullable|numeric|min:0',
-            'total' => 'required|numeric|min:0',
-            'payment_intent' => 'nullable|string',
-            'promo_code' => 'nullable|string',
-            'coupon_type' => 'nullable|string|in:percent,fixed',
-            'address_type' => 'nullable|string',
-            'line2' => 'nullable|string',
-            'zipcode' => 'nullable|string',
-            'mobile2' => 'nullable|string',
-            'additional_info' => 'nullable|string',
+            'payment_method'=>'required|string|in:card,paypal,cash,bizum',
+            'line1'=>'required|string','city'=>'required|string','country'=>'required|string',
+            'mobile1'=>'required|string',
+            'items'=>'required|array|min:1',
+            'items.*.product_id'=>'nullable|integer',
+            'items.*.pack_id'=>'nullable|integer',
+            'items.*.quantity'=>'required|integer|min:1',
+            'items.*.price'=>'required|numeric|min:0',
+            'items.*.cost'=>'nullable|numeric|min:0',
+            'subtotal'=>'required|numeric|min:0',
+            'discount'=>'nullable|numeric|min:0',
+            'total'=>'required|numeric|min:0',
+            'payment_intent'=>'nullable|string',
+            'promo_code'=>'nullable|string',
+            'coupon_type'=>'nullable|string|in:percent,fixed',
+            'address_type'=>'nullable|string',
+            'line2'=>'nullable|string',
+            'zipcode'=>'nullable|string',
+            'mobile2'=>'nullable|string',
+            'additional_info'=>'nullable|string',
         ]);
 
         DB::beginTransaction();
         try {
-            // ------------------- Crear dirección -------------------
             $address = Address::create([
-                'user_id' => $user->id,
-                'type' => $request->address_type ?? 'default',
-                'line1' => $request->line1,
-                'line2' => $request->line2 ?? null,
-                'city' => $request->city,
-                'zipcode' => $request->zipcode ?? null,
-                'country' => $request->country,
-                'mobile1' => $request->mobile1,
-                'mobile2' => $request->mobile2 ?? null,
-                'additional_info' => $request->additional_info ?? '',
-                'is_default' => 1,
+                'user_id'=>$user->id,
+                'type'=>$request->address_type ?? 'default',
+                'line1'=>$request->line1,
+                'line2'=>$request->line2 ?? null,
+                'city'=>$request->city,
+                'zipcode'=>$request->zipcode ?? null,
+                'country'=>$request->country,
+                'mobile1'=>$request->mobile1,
+                'mobile2'=>$request->mobile2 ?? null,
+                'additional_info'=>$request->additional_info ?? '',
+                'is_default'=>1,
             ]);
 
-            // ------------------- Crear orden -------------------
             $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
             $estimatedDelivery = Carbon::now()->addDays(5);
 
             $order = Order::create([
-                'order_code' => 'DEC-' . strtoupper(Str::random(10)),
-                'user_id' => $user->id,
-                'subtotal' => $request->subtotal ?? 0.00,
-                'total' => $request->total ?? 0.00,
-                'discount' => $request->discount ?? 0.00,
-                'shipping_cost' => $request->transport_fee ?? 0.00,
-                'tax' => 0.00,
-                'tax_rate' => null,
-                'shipping_address' => trim($address->line1 . ' ' . ($address->line2 ?? '')),
-                'address_id' => $address->id,
-                'mobile1' => $address->mobile1,
-                'mobile2' => $address->mobile2 ?? null,
-                'payment_method' => $request->payment_method,
-                'status' => 'pendiente',
-                'tracking_number' => $tracking_number,
-                'courier' => null,
-                'estimated_delivery_date' => $estimatedDelivery,
-                'promo_code' => $request->promo_code ?? null,
-                'coupon_type' => in_array($request->coupon_type, ['percent','fixed']) ? $request->coupon_type : null,
+                'order_code'=>'DEC-' . strtoupper(Str::random(10)),
+                'user_id'=>$user->id,
+                'subtotal'=>$request->subtotal ?? 0.00,
+                'total'=>$request->total ?? 0.00,
+                'discount'=>$request->discount ?? 0.00,
+                'shipping_cost'=>$request->transport_fee ?? 0.00,
+                'tax'=>0.00,
+                'tax_rate'=>null,
+                'shipping_address'=>trim($address->line1 . ' ' . ($address->line2 ?? '')),
+                'address_id'=>$address->id,
+                'mobile1'=>$address->mobile1,
+                'mobile2'=>$address->mobile2 ?? null,
+                'payment_method'=>$request->payment_method,
+                'status'=>'pendiente',
+                'tracking_number'=>$tracking_number,
+                'courier'=>null,
+                'estimated_delivery_date'=>$estimatedDelivery,
+                'promo_code'=>$request->promo_code ?? null,
+                'coupon_type'=>in_array($request->coupon_type,['percent','fixed']) ? $request->coupon_type : null,
             ]);
 
-            // ------------------- Crear items -------------------
-            foreach ($request->items as $item) {
+            foreach($request->items as $item){
                 OrderItem::create([
-                    'order_id' => $order->id,
-                    'product_id' => $item['product_id'],
-                    'quantity' => $item['quantity'],
-                    'price' => $item['price'],
-                    'cost' => $item['cost'] ?? null,
+                    'order_id'=>$order->id,
+                    'product_id'=>$item['product_id'] ?? null,
+                    'pack_id'=>$item['pack_id'] ?? null,
+                    'quantity'=>$item['quantity'],
+                    'price'=>$item['price'],
+                    'cost'=>$item['cost'] ?? null,
                 ]);
             }
 
-            // ------------------- Crear historial -------------------
             OrderStatusHistory::create([
-                'order_id' => $order->id,
-                'status' => 'pendiente',
-                'nota' => 'Pedido creado correctamente',
+                'order_id'=>$order->id,
+                'status'=>'pendiente',
+                'nota'=>'Pedido creado correctamente',
             ]);
 
-            // ------------------- Crear pago -------------------
             Payment::create([
-                'user_id' => $user->id,
-                'order_id' => $order->id,
-                'method' => $request->payment_method,
-                'provider' => 'stripe',
-                'status' => 'pending',
-                'amount' => $request->total,
-                'transaction_id' => $request->payment_intent,
-                'meta' => json_encode($request->all()),
+                'user_id'=>$user->id,
+                'order_id'=>$order->id,
+                'method'=>$request->payment_method,
+                'provider'=>'stripe',
+                'status'=>'pending',
+                'amount'=>$request->total,
+                'transaction_id'=>$request->payment_intent,
+                'meta'=>json_encode($request->all()),
             ]);
 
             DB::commit();
 
-
-            // Opcional: generar PDF
             $this->sendOrderConfirmationEmail($order);
 
             return response()->json([
-                'message' => 'Pedido creado exitosamente. Confirma el pago para procesarlo.',
-                'order' => $order->load('orderItems.product', 'address'),
-                'tracking_number' => $tracking_number,
-                'payment_client_secret' => $request->payment_intent,
-            ], 201);
+                'message'=>'Pedido creado exitosamente. Confirma el pago para procesarlo.',
+                'order'=>$order->load('orderItems.product','orderItems.pack','address'),
+                'tracking_number'=>$tracking_number,
+                'payment_client_secret'=>$request->payment_intent,
+            ],201);
 
-        } catch (\Throwable $e) {
+        } catch(\Throwable $e){
             DB::rollBack();
             Log::error('Error creando pedido', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'payload' => $request->all(),
+                'error'=>$e->getMessage(),
+                'trace'=>$e->getTraceAsString(),
+                'payload'=>$request->all(),
             ]);
 
             return response()->json([
-                'error' => 'Error al crear el pedido',
-                'details' => $e->getMessage(),
-            ], 500);
+                'error'=>'Error al crear el pedido',
+                'details'=>$e->getMessage(),
+            ],500);
         }
     }
 
+    // ==========================
+    // Métodos track, getOrders y estadísticas
+    // ==========================
+    public function trackOrder($tracking_number)
+    {
+        $order = Order::with(['orderItems.product','orderItems.pack','statusHistory','address'])
+            ->where('tracking_number',$tracking_number)
+            ->first();
+
+        if(!$order){
+            return response()->json(['error'=>'Pedido no encontrado'],404);
+        }
+
+        $items = $order->orderItems->map(fn($item) => [
+            'id'=>$item->id,
+            'product_id'=>$item->product_id,
+            'pack_id'=>$item->pack_id ?? null,
+            'product_name'=>$item->product_name
+                ?? ($item->product_id ? $item->product->name : null)
+                    ?? ($item->pack_id ? $item->pack->name : 'Item eliminado'),
+            'quantity'=>$item->quantity,
+            'price'=>$item->price,
+            'subtotal'=>$item->subtotal,
+            'profit'=>$item->profit,
+        ]);
+
+        $timeline = $order->statusHistory->map(fn($status) => [
+            'status'=>$status->status,
+            'nota'=>$status->nota,
+            'cambiado_en'=>($status->cambiado_en instanceof Carbon)
+                ? $status->cambiado_en->format('Y-m-d H:i:s')
+                : Carbon::parse($status->cambiado_en)?->format('Y-m-d H:i:s'),
+        ]);
+
+        return response()->json([
+            'order'=>[
+                'id'=>$order->id,
+                'order_code'=>$order->order_code,
+                'tracking_number'=>$order->tracking_number,
+                'status'=>$order->status,
+                'estimated_delivery_date'=>$order->estimated_delivery_date?->format('Y-m-d'),
+                'shipping_address'=>$order->shipping_address,
+                'total'=>$order->total,
+                'discount'=>$order->discount,
+                'total_after_discount'=>$order->total_after_discount,
+                'items'=>$items,
+                'timeline'=>$timeline,
+                'address'=>[
+                    'line1'=>$order->address->line1 ?? '',
+                    'city'=>$order->address->city ?? '',
+                    'country'=>$order->address->country ?? '',
+                    'mobile1'=>$order->address->mobile1 ?? '',
+                    'mobile2'=>$order->address->mobile2 ?? '',
+                ],
+            ]
+        ]);
+    }
 
 
 
@@ -538,66 +566,6 @@ class OrderController extends Controller
         ]);
     }
 
-    public function trackOrder($tracking_number)
-    {
-        // Cargar la orden con relaciones necesarias
-        $order = Order::with(['orderItems.product', 'statusHistory', 'address'])
-            ->where('tracking_number', $tracking_number)
-            ->first();
-
-        if (!$order) {
-            return response()->json(['error' => 'Pedido no encontrado'], 404);
-        }
-
-        // Preparar los productos del pedido
-        $items = $order->orderItems->map(function ($item) {
-            return [
-                'id' => $item->id,
-                'product_id' => $item->product_id,
-                'product_name' => $item->product->name ?? 'Producto eliminado',
-                'quantity' => $item->quantity,
-                'price' => $item->price,
-                'subtotal' => $item->quantity * $item->price,
-            ];
-        });
-
-        // Preparar timeline de estados
-        $timeline = $order->statusHistory->map(function ($status) {
-            $date = $status->cambiado_en;
-            if ($date && !($date instanceof \Carbon\Carbon)) {
-                $date = \Carbon\Carbon::parse($date);
-            }
-            return [
-                'status' => $status->status,
-                'nota' => $status->nota,
-                'cambiado_en' => $date?->format('Y-m-d H:i:s'),
-            ];
-        });
-
-        // Responder con todos los datos importantes
-        return response()->json([
-            'order' => [
-                'id' => $order->id,
-                'order_code' => $order->order_code,
-                'tracking_number' => $order->tracking_number,
-                'status' => $order->status,
-                'estimated_delivery_date' => $order->estimated_delivery_date?->format('Y-m-d'),
-                'shipping_address' => $order->shipping_address,
-                'total' => $order->total,
-                'discount' => $order->discount,
-                'total_after_discount' => $order->total_after_discount,
-                'items' => $items,
-                'timeline' => $timeline,
-                'address' => [
-                    'line1' => $order->address->line1 ?? '',
-                    'city' => $order->address->city ?? '',
-                    'country' => $order->address->country ?? '',
-                    'mobile1' => $order->address->mobile1 ?? '',
-                    'mobile2' => $order->address->mobile2 ?? '',
-                ],
-            ]
-        ]);
-    }
 
 
 

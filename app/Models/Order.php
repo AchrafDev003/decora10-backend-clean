@@ -11,7 +11,6 @@ class Order extends Model
 {
     use HasFactory;
 
-
     protected $fillable = [
         'user_id',
         'address_id',
@@ -32,7 +31,6 @@ class Order extends Model
         'mobile1',
         'mobile2',
         'order_code',
-
     ];
 
     protected $casts = [
@@ -45,8 +43,9 @@ class Order extends Model
         'updated_at' => 'datetime',
     ];
 
-
-
+    // ---------------------------
+    // Totales y ganancia
+    // ---------------------------
     public function getTotalAfterDiscountAttribute()
     {
         return max($this->total - $this->discount, 0);
@@ -62,13 +61,9 @@ class Order extends Model
         return $this->total - $this->total_cost;
     }
 
-
-
-
-    // ===========================
-    // 🔗 RELACIONES
-    // ===========================
-
+    // ---------------------------
+    // Relaciones
+    // ---------------------------
     public function user()
     {
         return $this->belongsTo(User::class)->withDefault([
@@ -106,12 +101,9 @@ class Order extends Model
         return $this->hasOne(Payment::class);
     }
 
-
-    // ===========================
-    // 💡 ACCESORES / MUTADORES
-    // ===========================
-
-
+    // ---------------------------
+    // Accesores
+    // ---------------------------
     public function getLastStatusAttribute()
     {
         return $this->statusHistory()->latest('cambiado_en')->first()?->status ?? $this->status;
@@ -132,28 +124,24 @@ class Order extends Model
         });
     }
 
-    // ===========================
-    // ⚙️ EVENTOS
-    // ===========================
-
+    // ---------------------------
+    // Eventos
+    // ---------------------------
     protected static function booted()
     {
         static::creating(function ($order) {
             if (!$order->order_code) {
                 $order->order_code = 'DECORA10-' . now()->format('Ymd') . '-' . strtoupper(Str::random(5));
             }
-
-            // Si no hay descuento explícito, inicializa a 0
             if (is_null($order->discount)) {
                 $order->discount = 0;
             }
         });
     }
 
-    // ===========================
-    // 📦 FORMATO JSON (Frontend)
-    // ===========================
-
+    // ---------------------------
+    // Formato JSON
+    // ---------------------------
     public function toArray()
     {
         return [
@@ -172,14 +160,20 @@ class Order extends Model
                 'mobile1'  => $this->address->mobile1 ?? '',
                 'mobile2'  => $this->address->mobile2 ?? '',
             ],
-            'items'                => ($this->orderItems ?? collect())->map(function ($item) {
+            'items' => ($this->orderItems ?? collect())->map(function ($item) {
+                $name = $item->product_name
+                    ?? ($item->product_id ? $item->product->name : null)
+                    ?? ($item->pack_id ? $item->pack->name : 'Item eliminado');
+
                 return [
                     'id'           => $item->id,
                     'product_id'   => $item->product_id,
-                    'product_name' => $item->product->name ?? 'Producto eliminado',
+                    'pack_id'      => $item->pack_id,
+                    'product_name' => $name,
                     'quantity'     => $item->quantity,
-                    'price'        => $item->price,
-                    'subtotal'     => $item->quantity * $item->price,
+                    'price'        => (float) $item->price,
+                    'subtotal'     => round($item->quantity * $item->price, 2),
+                    'profit'       => $item->profit,
                 ];
             }),
             'status'               => $this->status,
@@ -198,7 +192,6 @@ class Order extends Model
             'subtotal' => $this->subtotal,
             'coupon_type' => $this->coupon_type,
             'profit' => $this->profit,
-
             'created_at'           => $this->created_at?->format('Y-m-d H:i:s'),
             'updated_at'           => $this->updated_at?->format('Y-m-d H:i:s'),
             'timeline'             => $this->timeline,

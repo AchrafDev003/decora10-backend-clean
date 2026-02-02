@@ -12,29 +12,30 @@ class OrderItem extends Model
     protected $fillable = [
         'order_id',
         'product_id',
+        'pack_id',       // nuevo: pack
         'quantity',
         'price',
-        'product_name',
-        'cost', // nuevo campo
+        'product_name',  // opcional, para override
+        'cost',
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
-        'cost' => 'decimal:2', // nuevo
+        'cost' => 'decimal:2',
         'quantity' => 'integer',
     ];
 
-
+    // ---------------------------
+    // 💰 Ganancia
+    // ---------------------------
     public function getProfitAttribute(): float
     {
         return round(($this->price - ($this->cost ?? 0)) * $this->quantity, 2);
     }
 
-
-    // ===========================
-    // 🔗 RELACIONES
-    // ===========================
-
+    // ---------------------------
+    // 🔗 Relaciones
+    // ---------------------------
     public function order()
     {
         return $this->belongsTo(Order::class);
@@ -48,25 +49,36 @@ class OrderItem extends Model
         ]);
     }
 
-    // ===========================
-    // 💡 ACCESORES
-    // ===========================
+    public function pack()
+    {
+        return $this->belongsTo(Pack::class)->withDefault([
+            'name' => 'Pack eliminado',
+            'price' => 0,
+        ]);
+    }
 
+    // ---------------------------
+    // 💡 Accesor: subtotal
+    // ---------------------------
     public function getSubtotalAttribute(): float
     {
         return round($this->quantity * $this->price, 2);
     }
 
-    // ===========================
-    // 📦 FORMATO JSON
-    // ===========================
-
+    // ---------------------------
+    // 📦 Formato JSON
+    // ---------------------------
     public function toArray(): array
     {
+        $name = $this->product_name
+            ?? ($this->product_id ? $this->product->name : null)
+            ?? ($this->pack_id ? $this->pack->name : 'Item eliminado');
+
         return [
             'id'           => $this->id,
             'product_id'   => $this->product_id,
-            'product_name' => $this->product_name ?? ($this->product->name ?? 'Producto eliminado'),
+            'pack_id'      => $this->pack_id,
+            'product_name' => $name,
             'quantity'     => $this->quantity,
             'price'        => (float) $this->price,
             'cost'         => (float) ($this->cost ?? 0),
@@ -74,5 +86,4 @@ class OrderItem extends Model
             'profit'       => $this->profit,
         ];
     }
-
 }
