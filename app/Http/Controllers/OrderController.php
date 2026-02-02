@@ -223,7 +223,13 @@ class OrderController extends Controller
 
             DB::commit();
 
-            $this->sendOrderConfirmationEmail($order);
+            try {
+                $this->sendOrderConfirmationEmail($order);
+            } catch (\Throwable $e) {
+                Log::warning('No se pudo enviar el email de confirmación del pedido', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);}
 
             return response()->json([
                 'message'=>'Pedido creado exitosamente. Confirma el pago para procesarlo.',
