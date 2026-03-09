@@ -25,6 +25,7 @@ use App\Http\Controllers\Payment\StripeController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\PackController;
+use App\Http\Controllers\DesignCatalogController;
 
 
 /*
@@ -157,6 +158,13 @@ Route::prefix('v1')->group(function () {
         Route::get('/orders/revenue-stats', [OrderController::class, 'getRevenueStats']);
         Route::get('/orders/revenue-monthly', [OrderController::class, 'getMonthlyRevenue']);
 
+    });
+    Route::middleware(['auth:sanctum', CheckUserRole::class . ':admin,dueno'])->group(function () {
+        Route::get('/design-catalog', [DesignCatalogController::class, 'index']);
+        Route::get('/design-catalog/{id}', [DesignCatalogController::class, 'show']);
+        Route::post('/design-catalog', [DesignCatalogController::class, 'store']);
+        Route::put('/design-catalog/{id}', [DesignCatalogController::class, 'update']);
+        Route::delete('/design-catalog/{id}', [DesignCatalogController::class, 'destroy']);
     });
 
     //Packs
