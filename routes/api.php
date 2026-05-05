@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Payment\GetnetController;
+use App\Http\Controllers\Payment\GetnetNotifyController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
@@ -89,6 +91,9 @@ Route::get('/test-perm', function () {
 |--------------------------------------------------------------------------
 */
 Route::prefix('v1')->group(function () {
+    Route::post('/payment/notify', [GetnetNotifyController::class, 'notify']);
+    Route::post('/payment/getnet/init', [GetnetController::class, 'createPayment'])
+        ->name('payment.getnet.init');
     // Webhook Stripe (no requiere auth)
     Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle']);
 
