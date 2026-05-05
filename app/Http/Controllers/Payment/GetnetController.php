@@ -114,13 +114,14 @@ class GetnetController extends Controller
 
         } catch (\Throwable $e) {
 
-            Log::error('Getnet error', [
+            Log::error('Getnet FULL ERROR', [
                 'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'error'   => 'Error iniciando pago',
+                'error' => $e->getMessage(), // 👈 CLAVE
             ], 500);
         }
     }
