@@ -91,7 +91,16 @@ Route::get('/test-perm', function () {
 |--------------------------------------------------------------------------
 */
 Route::prefix('v1')->group(function () {
-    Route::post('/payment/notify', [GetnetNotifyController::class, 'notify']);
+    Route::post('/payment/notify', [GetnetNotifyController::class, 'notify'])
+        ->name('payment.notify');
+
+    Route::get('/payment/ok', function () {
+        return response()->json(['status' => 'ok']);
+    })->name('payment.ok');
+
+    Route::get('/payment/ko', function () {
+        return response()->json(['status' => 'ko']);
+    })->name('payment.ko');
     Route::post('/payment/getnet/init', [GetnetController::class, 'createPayment'])
         ->name('payment.getnet.init');
     // Webhook Stripe (no requiere auth)

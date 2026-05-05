@@ -131,7 +131,7 @@ class GetnetController extends Controller
      */
     private function generateSignature($paramsBase64, $secretKey, $orderCode)
     {
-        $key = $secretKey;
+        $key = base64_decode($secretKey);
 
         // Derivar clave con orderCode
         $derivedKey = openssl_encrypt(
