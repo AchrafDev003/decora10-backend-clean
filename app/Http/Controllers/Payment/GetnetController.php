@@ -18,17 +18,17 @@ class GetnetController extends Controller
         try {
 
             // ==========================
-            // 🔎 Obtener pedido real
+            // 🔎 Obtener pedido
             // ==========================
             $order = Order::findOrFail($request->order_id);
 
             // ==========================
-            // 🛡️ Validación de estado
+            // 🛡️ Estado válido
             // ==========================
             if (!in_array($order->status, ['pendiente', 'pending'])) {
                 return response()->json([
                     'success' => false,
-                    'error'   => 'El pedido no está disponible para pago',
+                    'error'   => 'Pedido no disponible para pago',
                 ], 400);
             }
 
@@ -43,36 +43,35 @@ class GetnetController extends Controller
             }
 
             // ==========================
-            // 💰 Importe REAL
+            // 💰 Validación total
             // ==========================
-            $amountCents = (int) round($order->total * 100);
-
-            if ($amountCents <= 0) {
+            if (!$order->total || $order->total <= 0) {
                 return response()->json([
                     'success' => false,
-                    'error'   => 'Cantidad inválida',
+                    'error'   => 'Total inválido',
                 ], 422);
             }
 
-            // ==========================
-            // 🔥 OrderCode banco (12 dígitos)
-            // ==========================
-            $orderCode = str_pad($order->id, 12, '0', STR_PAD_LEFT);
+            $amountCents = (int) round($order->total * 100);
 
-            // Guardarlo para trazabilidad
+            // ==========================
+            // 🔥 OrderCode seguro (12 chars max)
+            // ==========================
+            $orderCode = substr((string) ($order->id . time()), 0, 12);
+
             $order->update([
                 'order_code_bank' => $orderCode
             ]);
 
             // ==========================
-            // 🔐 Configuración
+            // 🔐 Config
             // ==========================
             $merchantCode = env('GETNET_MERCHANT');
             $terminal     = env('GETNET_TERMINAL');
             $secretKey    = env('GETNET_SECRET');
 
             // ==========================
-            // 📦 Parámetros TPV
+            // 📦 Params
             // ==========================
             $params = [
                 "DS_MERCHANT_AMOUNT"          => $amountCents,
@@ -82,26 +81,26 @@ class GetnetController extends Controller
                 "DS_MERCHANT_TRANSACTIONTYPE" => "0",
                 "DS_MERCHANT_TERMINAL"        => $terminal,
 
-                // 🔥 URLs
                 "DS_MERCHANT_MERCHANTURL" => route('payment.notify'),
                 "DS_MERCHANT_URLOK"       => route('payment.ok'),
                 "DS_MERCHANT_URLKO"       => route('payment.ko'),
             ];
 
             // ==========================
-            // 🔄 Codificar
+            // 🔄 FIX FIRMA ESTABLE
             // ==========================
-            $paramsBase64 = base64_encode(json_encode($params));
+            ksort($params);
 
-            // ==========================
-            // 🔐 Firma CORRECTA (clave derivada)
-            // ==========================
+            $paramsBase64 = base64_encode(
+                json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            );
+
             $signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
 
-            Log::info('Getnet pago iniciado', [
+            Log::info('Getnet INIT', [
                 'order_id'   => $order->id,
                 'order_code' => $orderCode,
-                'amount'     => $order->total,
+                'amount'     => $amountCents,
             ]);
 
             return response()->json([
@@ -114,26 +113,25 @@ class GetnetController extends Controller
 
         } catch (\Throwable $e) {
 
-            Log::error('Getnet FULL ERROR', [
+            Log::error('Getnet ERROR', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace'   => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage(), // 👈 CLAVE
+                'error'   => 'Error iniciando pago',
             ], 500);
         }
     }
 
     /**
-     * 🔐 Firma estilo Redsys/Getnet real
+     * 🔐 Firma Redsys compatible estable
      */
     private function generateSignature($paramsBase64, $secretKey, $orderCode)
     {
         $key = base64_decode($secretKey);
 
-        // Derivar clave con orderCode
         $derivedKey = openssl_encrypt(
             $orderCode,
             'AES-128-ECB',
