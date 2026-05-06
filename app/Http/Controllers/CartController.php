@@ -109,70 +109,43 @@ class CartController extends Controller
         $quantity = $request->input('quantity', 1);
         $measure = $request->measure;
 
-        // =========================
-        // PRODUCT
-        // =========================
         if ($request->type === 'product') {
-
             $product = Product::findOrFail($request->id);
+
+            $item = CartItem::firstOrNew([
+                'cart_id' => $cart->id,
+                'product_id' => $product->id,
+                'pack_id' => null,           // 🔹 importante
+                'measure' => $measure,
+            ]);
 
             $price = $product->category?->id === 76
                 ? ($product->promo_price ?? $product->price) + $this->getMeasurePriceAdjustment($measure)
                 : ($product->promo_price ?? $product->price);
 
-            $item = CartItem::firstOrCreate(
-                [
-                    'cart_id' => $cart->id,
-                    'product_id' => $product->id,
-                    'pack_id' => null,
-                    'measure' => $measure,
-                ],
-                [
-                    'quantity' => 0,
-                    'total_price' => 0, // 🔥 FIX CRÍTICO
-                    'reserved_until' => now()->addDays(2),
-                ]
-            );
-        }
-
-        // =========================
-        // PACK
-        // =========================
-        else {
-
+        } else { // pack
             $pack = Pack::findOrFail($request->id);
 
-            if ($pack->requires_measure && !$measure) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Debes seleccionar una medida para este pack'
-                ], 422);
-            }
+            $item = CartItem::firstOrNew([
+                'cart_id' => $cart->id,
+                'pack_id' => $pack->id,
+                'product_id' => null,       // 🔹 importante
+            ]);
 
             $price = $pack->promo_price ?? $pack->original_price;
 
-            $item = CartItem::firstOrCreate(
-                [
-                    'cart_id' => $cart->id,
-                    'pack_id' => $pack->id,
-                    'product_id' => null,
-                    'measure' => $measure,
-                ],
-                [
-                    'quantity' => 0,
-                    'total_price' => 0, // 🔥 FIX CRÍTICO
-                    'reserved_until' => now()->addDays(2),
-                ]
-            );
-
+            // Asignar measure solo si el pack requiere medida
             if ($pack->requires_measure) {
+                if (!$measure) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Debes seleccionar una medida para este pack'
+                    ], 422);
+                }
                 $item->measure = $measure;
             }
         }
 
-        // =========================
-        // UPDATE QUANTITY
-        // =========================
         $newQuantity = min(self::MAX_QUANTITY, ($item->quantity ?? 0) + $quantity);
 
         if ($this->willExceedTotal($cart, $item, $newQuantity, $price)) {
@@ -182,9 +155,6 @@ class CartController extends Controller
             ], 400);
         }
 
-        // =========================
-        // SAVE FINAL DATA
-        // =========================
         $item->quantity = $newQuantity;
         $item->total_price = $price * $newQuantity;
         $item->reserved_until = now()->addDays(2);
@@ -194,6 +164,7 @@ class CartController extends Controller
 
         return $this->index();
     }
+
 
     /**
      * Actualizar cantidad

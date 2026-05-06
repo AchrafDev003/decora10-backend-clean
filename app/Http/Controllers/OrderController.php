@@ -125,7 +125,7 @@ class OrderController extends Controller
     // ==========================
     // Crear un pedido
     // ==========================
-    /*public function store(Request $request)
+    public function store(Request $request)
     {
         $user = auth()->user();
 
@@ -251,9 +251,9 @@ class OrderController extends Controller
                 'details'=>$e->getMessage(),
             ],500);
         }
-    }*/
+    }
 
-    public function store(Request $request)
+    /*public function store(Request $request)
     {
         $user = auth()->user();
 
@@ -424,7 +424,7 @@ class OrderController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
-    }
+    }*/
 
     // ==========================
     // Métodos track, getOrders y estadísticas
