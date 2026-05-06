@@ -258,121 +258,110 @@ class OrderController extends Controller
         $user = auth()->user();
 
         $validated = $request->validate([
-            'payment_method' => 'required|string|in:card,paypal,cash,bizum',
+            'payment_method' => 'required|in:card,paypal,cash,bizum',
 
-            // Dirección
-            'line1'   => 'required|string',
-            'city'    => 'required|string',
-            'country' => 'required|string',
+            // 🔥 IMPORTANTE: ahora opcional si hay address_id
+            'address_id' => 'nullable|exists:addresses,id',
+
+            'line1' => 'required_without:address_id|string',
+            'city' => 'required_without:address_id|string',
+            'country' => 'required_without:address_id|string',
             'mobile1' => 'required|string',
 
-            // Items
             'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|integer|exists:products,id',
-            'items.*.quantity'   => 'required|integer|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity' => 'required|integer|min:1',
 
-            // Opcionales
-            'promo_code'   => 'nullable|string',
-            'address_type' => 'nullable|string',
-            'line2'        => 'nullable|string',
-            'zipcode'      => 'nullable|string',
-            'mobile2'      => 'nullable|string',
-            'additional_info' => 'nullable|string',
+            'promo_code' => 'nullable|string',
+            'zipcode' => 'nullable|string',
         ]);
 
         DB::beginTransaction();
 
         try {
 
-            // ==========================
-            // 📍 Dirección
-            // ==========================
-            $address = Address::create([
-                'user_id' => $user->id,
-                'type'    => $request->address_type ?? 'default',
-                'line1'   => $request->line1,
-                'line2'   => $request->line2,
-                'city'    => $request->city,
-                'zipcode' => $request->zipcode,
-                'country' => $request->country,
-                'mobile1' => $request->mobile1,
-                'mobile2' => $request->mobile2,
-                'additional_info' => $request->additional_info ?? '',
-                'is_default' => 1,
-            ]);
-
-            // ==========================
-            // 🧮 Cálculo REAL (CRÍTICO)
-            // ==========================
-            $subtotal = 0;
-            $itemsData = [];
-
-            foreach ($request->items as $item) {
-
-                $product = Product::lockForUpdate()->find($item['product_id']);
-
-                if (!$product) {
-                    throw new \Exception('Producto no encontrado');
-                }
-
-                if ($product->stock < $item['quantity']) {
-                    throw new \Exception("Stock insuficiente para {$product->name}");
-                }
-
-                $price = $product->price;
-                $lineTotal = $price * $item['quantity'];
-
-                $subtotal += $lineTotal;
-
-                $itemsData[] = [
-                    'product_id' => $product->id,
-                    'quantity'   => $item['quantity'],
-                    'price'      => $price,
-                    'cost'       => $product->cost ?? null,
-                ];
-
-                // opcional: descontar stock
-                $product->decrement('stock', $item['quantity']);
+            // =====================
+            // ADDRESS (REUTILIZAR O CREAR)
+            // =====================
+            if ($request->address_id) {
+                $address = Address::where('id', $request->address_id)
+                    ->where('user_id', $user->id)
+                    ->firstOrFail();
+            } else {
+                $address = Address::create([
+                    'user_id' => $user->id,
+                    'type' => 'shipping',
+                    'line1' => $request->line1,
+                    'line2' => $request->line2,
+                    'city' => $request->city,
+                    'zipcode' => $request->zipcode,
+                    'country' => $request->country,
+                    'mobile1' => $request->mobile1,
+                    'mobile2' => $request->mobile2,
+                    'additional_info' => $request->additional_info,
+                ]);
             }
 
-            // ==========================
-            // 🎁 Descuento (ejemplo base)
-            // ==========================
+            // =====================
+            // CALCULO BACKEND
+            // =====================
+            $subtotal = 0;
+            $items = [];
+
+            foreach ($request->items as $i) {
+
+                $product = Product::findOrFail($i['product_id']);
+
+                if ($product->stock < $i['quantity']) {
+                    throw new \Exception("Stock insuficiente: {$product->name}");
+                }
+
+                $line = $product->price * $i['quantity'];
+                $subtotal += $line;
+
+                $items[] = [
+                    'product_id' => $product->id,
+                    'quantity' => $i['quantity'],
+                    'price' => $product->price,
+                    'cost' => $product->cost ?? 0,
+                ];
+            }
+
+            // =====================
+            // DISCOUNT
+            // =====================
             $discount = 0;
 
             if ($request->promo_code === 'WELCOME10') {
                 $discount = $subtotal * 0.10;
             }
 
-            // ==========================
-            // 🚚 Envío (puedes mejorar)
-            // ==========================
-            $shipping = 0;
+            // =====================
+            // SHIPPING
+            // =====================
+            $shipping = $request->shipping_cost ?? 0;
 
-            // ==========================
-            // 💰 Total FINAL
-            // ==========================
+            // =====================
+            // TOTAL
+            // =====================
             $total = max(0, $subtotal - $discount + $shipping);
 
-            // ==========================
-            // 📦 Pedido
-            // ==========================
-            $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
-
+            // =====================
+            // ORDER
+            // =====================
             $order = Order::create([
                 'order_code' => 'DEC-' . strtoupper(Str::random(10)),
-                'user_id'    => $user->id,
+                'user_id' => $user->id,
 
                 'subtotal' => $subtotal,
                 'discount' => $discount,
-                'total'    => $total,
-
                 'shipping_cost' => $shipping,
+                'total' => $total,
 
-                'tax'      => 0,
+                'tax' => 0,
                 'tax_rate' => null,
 
-                'shipping_address' => trim($address->line1 . ' ' . $address->line2),
+                // 🔥 SOLO ID (CLARO Y LIMPIO)
                 'address_id' => $address->id,
 
                 'mobile1' => $address->mobile1,
@@ -381,70 +370,58 @@ class OrderController extends Controller
                 'payment_method' => $request->payment_method,
                 'status' => 'pendiente',
 
-                'tracking_number' => $tracking_number,
+                'tracking_number' => 'DEC-' . strtoupper(Str::random(8)),
                 'estimated_delivery_date' => now()->addDays(5),
 
                 'promo_code' => $request->promo_code,
             ]);
 
-            // ==========================
-            // 🧾 Items
-            // ==========================
-            foreach ($itemsData as $item) {
+            // =====================
+            // ITEMS
+            // =====================
+            foreach ($items as $item) {
                 OrderItem::create([
                     'order_id' => $order->id,
                     ...$item
                 ]);
             }
 
-            // ==========================
-            // 📊 Historial
-            // ==========================
+            // =====================
+            // STATUS
+            // =====================
             OrderStatusHistory::create([
                 'order_id' => $order->id,
-                'status'   => 'pendiente',
-                'nota'     => 'Pedido creado correctamente',
+                'status' => 'pendiente',
+                'nota' => 'Pedido creado',
             ]);
 
-            // ==========================
-            // 💳 Payment (Getnet READY)
-            // ==========================
+            // =====================
+            // PAYMENT
+            // =====================
             Payment::create([
-                'user_id'  => $user->id,
+                'user_id' => $user->id,
                 'order_id' => $order->id,
-                'method'   => $request->payment_method,
+                'method' => $request->payment_method,
                 'provider' => 'getnet',
-                'status'   => 'initiated',
-                'amount'   => $total,
+                'status' => 'initiated',
+                'amount' => $total,
                 'transaction_id' => null,
-                'meta' => json_encode([
-                    'ip' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                ]),
             ]);
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Pedido creado. Procede al pago.',
-                'order_id' => $order->id,
-                'tracking_number' => $tracking_number,
+                'order' => $order,
                 'total' => $total,
             ], 201);
 
         } catch (\Throwable $e) {
-
             DB::rollBack();
-
-            Log::error('ORDER STORE ERROR', [
-                'user_id' => $user->id,
-                'error'   => $e->getMessage(),
-            ]);
 
             return response()->json([
                 'success' => false,
-                'error'   => 'No se pudo crear el pedido',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

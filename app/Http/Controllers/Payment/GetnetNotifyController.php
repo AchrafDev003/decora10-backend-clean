@@ -24,7 +24,7 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 🔓 Decodificar parámetros
+            // 🔓 Decode
             // ==========================
             $decodedParams = json_decode(base64_decode($merchantParams), true);
 
@@ -34,7 +34,7 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 📊 Datos principales
+            // 📊 DATA
             // ==========================
             $orderCode = $decodedParams['Ds_Order'] ?? null;
             $response  = intval($decodedParams['Ds_Response'] ?? 9999);
@@ -46,11 +46,10 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 🔐 VALIDAR FIRMA (CORRECTO)
+            // 🔐 SIGNATURE
             // ==========================
             $secretKey = base64_decode(env('GETNET_SECRET'));
 
-            // 🔥 CLAVE DERIVADA (igual que en createPayment)
             $derivedKey = openssl_encrypt(
                 $orderCode,
                 'AES-128-ECB',
@@ -71,13 +70,11 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 🔎 Buscar pedido
+            // 🔎 ORDER
             // ==========================
-            $orderId = (int) $orderCode;
-            $order = Order::find($orderId);
+            $order = Order::find((int) $orderCode);
 
             if (!$order) {
-                Log::error('Pedido no encontrado', ['orderCode' => $orderCode]);
                 return response('KO', 404);
             }
 
@@ -86,19 +83,18 @@ class GetnetNotifyController extends Controller
                 ->first();
 
             if (!$payment) {
-                Log::error('Pago no encontrado', ['order_id' => $order->id]);
                 return response('KO', 404);
             }
 
             // ==========================
-            // 🛡️ Idempotencia REAL
+            // 🛡️ IDEMPOTENCIA
             // ==========================
             if ($payment->status === 'paid') {
                 return response('OK', 200);
             }
 
             // ==========================
-            // 🔐 Validar importe
+            // 💰 VALIDAR IMPORTE
             // ==========================
             $expectedAmount = (int) round($order->total * 100);
 
@@ -112,22 +108,23 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 💳 Resultado del pago
+            // 💳 RESULTADO PAGO
             // ==========================
             if ($response >= 0 && $response <= 99) {
 
+                // ✔ PAGO OK
                 $payment->update([
                     'status' => 'paid',
                     'transaction_id' => $authCode,
                 ]);
 
                 $order->update([
-                    'status' => 'procesando'
+                    'status' => 'pagado'
                 ]);
 
                 OrderStatusHistory::create([
                     'order_id' => $order->id,
-                    'status'   => 'procesando',
+                    'status'   => 'pagado',
                     'nota'     => 'Pago confirmado por Getnet',
                 ]);
 
@@ -138,17 +135,18 @@ class GetnetNotifyController extends Controller
 
             } else {
 
+                // ❌ PAGO FALLIDO (NO ES CANCELADO)
                 $payment->update([
                     'status' => 'failed',
                 ]);
 
                 $order->update([
-                    'status' => 'cancelado'
+                    'status' => 'fallo_pago'
                 ]);
 
                 OrderStatusHistory::create([
                     'order_id' => $order->id,
-                    'status'   => 'cancelado',
+                    'status'   => 'fallo_pago',
                     'nota'     => 'Pago rechazado por Getnet',
                 ]);
 
