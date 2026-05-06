@@ -258,126 +258,194 @@ class OrderController extends Controller
         $user = auth()->user();
 
         $validated = $request->validate([
-            'payment_method'=>'required|string|in:card,paypal,cash,bizum',
-            'line1'=>'required|string','city'=>'required|string','country'=>'required|string',
-            'mobile1'=>'required|string',
-            'items'=>'required|array|min:1',
-            'items.*.product_id'=>'nullable|integer',
-            'items.*.pack_id'=>'nullable|integer',
-            'items.*.quantity'=>'required|integer|min:1',
-            'items.*.price'=>'required|numeric|min:0',
-            'items.*.cost'=>'nullable|numeric|min:0',
-            'subtotal'=>'required|numeric|min:0',
-            'discount'=>'nullable|numeric|min:0',
-            'total'=>'required|numeric|min:0',
-            'payment_intent'=>'nullable|string',
-            'promo_code'=>'nullable|string',
-            'coupon_type'=>'nullable|string|in:percent,fixed',
-            'address_type'=>'nullable|string',
-            'line2'=>'nullable|string',
-            'zipcode'=>'nullable|string',
-            'mobile2'=>'nullable|string',
-            'additional_info'=>'nullable|string',
+            'payment_method' => 'required|string|in:card,paypal,cash,bizum',
+
+            // Dirección
+            'line1'   => 'required|string',
+            'city'    => 'required|string',
+            'country' => 'required|string',
+            'mobile1' => 'required|string',
+
+            // Items
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|integer|exists:products,id',
+            'items.*.quantity'   => 'required|integer|min:1',
+
+            // Opcionales
+            'promo_code'   => 'nullable|string',
+            'address_type' => 'nullable|string',
+            'line2'        => 'nullable|string',
+            'zipcode'      => 'nullable|string',
+            'mobile2'      => 'nullable|string',
+            'additional_info' => 'nullable|string',
         ]);
 
         DB::beginTransaction();
+
         try {
+
+            // ==========================
+            // 📍 Dirección
+            // ==========================
             $address = Address::create([
-                'user_id'=>$user->id,
-                'type'=>$request->address_type ?? 'default',
-                'line1'=>$request->line1,
-                'line2'=>$request->line2 ?? null,
-                'city'=>$request->city,
-                'zipcode'=>$request->zipcode ?? null,
-                'country'=>$request->country,
-                'mobile1'=>$request->mobile1,
-                'mobile2'=>$request->mobile2 ?? null,
-                'additional_info'=>$request->additional_info ?? '',
-                'is_default'=>1,
+                'user_id' => $user->id,
+                'type'    => $request->address_type ?? 'default',
+                'line1'   => $request->line1,
+                'line2'   => $request->line2,
+                'city'    => $request->city,
+                'zipcode' => $request->zipcode,
+                'country' => $request->country,
+                'mobile1' => $request->mobile1,
+                'mobile2' => $request->mobile2,
+                'additional_info' => $request->additional_info ?? '',
+                'is_default' => 1,
             ]);
 
+            // ==========================
+            // 🧮 Cálculo REAL (CRÍTICO)
+            // ==========================
+            $subtotal = 0;
+            $itemsData = [];
+
+            foreach ($request->items as $item) {
+
+                $product = Product::lockForUpdate()->find($item['product_id']);
+
+                if (!$product) {
+                    throw new \Exception('Producto no encontrado');
+                }
+
+                if ($product->stock < $item['quantity']) {
+                    throw new \Exception("Stock insuficiente para {$product->name}");
+                }
+
+                $price = $product->price;
+                $lineTotal = $price * $item['quantity'];
+
+                $subtotal += $lineTotal;
+
+                $itemsData[] = [
+                    'product_id' => $product->id,
+                    'quantity'   => $item['quantity'],
+                    'price'      => $price,
+                    'cost'       => $product->cost ?? null,
+                ];
+
+                // opcional: descontar stock
+                $product->decrement('stock', $item['quantity']);
+            }
+
+            // ==========================
+            // 🎁 Descuento (ejemplo base)
+            // ==========================
+            $discount = 0;
+
+            if ($request->promo_code === 'WELCOME10') {
+                $discount = $subtotal * 0.10;
+            }
+
+            // ==========================
+            // 🚚 Envío (puedes mejorar)
+            // ==========================
+            $shipping = 0;
+
+            // ==========================
+            // 💰 Total FINAL
+            // ==========================
+            $total = max(0, $subtotal - $discount + $shipping);
+
+            // ==========================
+            // 📦 Pedido
+            // ==========================
             $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
-            $estimatedDelivery = Carbon::now()->addDays(5);
 
             $order = Order::create([
-                'order_code'=>'DEC-' . strtoupper(Str::random(10)),
-                'user_id'=>$user->id,
-                'subtotal'=>$request->subtotal ?? 0.00,
-                'total'=>$request->total ?? 0.00,
-                'discount'=>$request->discount ?? 0.00,
-                'shipping_cost'=>$request->transport_fee ?? 0.00,
-                'tax'=>0.00,
-                'tax_rate'=>null,
-                'shipping_address'=>trim($address->line1 . ' ' . ($address->line2 ?? '')),
-                'address_id'=>$address->id,
-                'mobile1'=>$address->mobile1,
-                'mobile2'=>$address->mobile2 ?? null,
-                'payment_method'=>$request->payment_method,
-                'status'=>'pendiente',
-                'tracking_number'=>$tracking_number,
-                'courier'=>null,
-                'estimated_delivery_date'=>$estimatedDelivery,
-                'promo_code'=>$request->promo_code ?? null,
-                'coupon_type'=>in_array($request->coupon_type,['percent','fixed']) ? $request->coupon_type : null,
+                'order_code' => 'DEC-' . strtoupper(Str::random(10)),
+                'user_id'    => $user->id,
+
+                'subtotal' => $subtotal,
+                'discount' => $discount,
+                'total'    => $total,
+
+                'shipping_cost' => $shipping,
+
+                'tax'      => 0,
+                'tax_rate' => null,
+
+                'shipping_address' => trim($address->line1 . ' ' . $address->line2),
+                'address_id' => $address->id,
+
+                'mobile1' => $address->mobile1,
+                'mobile2' => $address->mobile2,
+
+                'payment_method' => $request->payment_method,
+                'status' => 'pendiente',
+
+                'tracking_number' => $tracking_number,
+                'estimated_delivery_date' => now()->addDays(5),
+
+                'promo_code' => $request->promo_code,
             ]);
 
-            foreach($request->items as $item){
+            // ==========================
+            // 🧾 Items
+            // ==========================
+            foreach ($itemsData as $item) {
                 OrderItem::create([
-                    'order_id'=>$order->id,
-                    'product_id'=>$item['product_id'] ?? null,
-                    'pack_id'=>$item['pack_id'] ?? null,
-                    'quantity'=>$item['quantity'],
-                    'price'=>$item['price'],
-                    'cost'=>$item['cost'] ?? null,
+                    'order_id' => $order->id,
+                    ...$item
                 ]);
             }
 
+            // ==========================
+            // 📊 Historial
+            // ==========================
             OrderStatusHistory::create([
-                'order_id'=>$order->id,
-                'status'=>'pendiente',
-                'nota'=>'Pedido creado correctamente',
+                'order_id' => $order->id,
+                'status'   => 'pendiente',
+                'nota'     => 'Pedido creado correctamente',
             ]);
 
+            // ==========================
+            // 💳 Payment (Getnet READY)
+            // ==========================
             Payment::create([
-                'user_id'=>$user->id,
-                'order_id'=>$order->id,
-                'method'=>$request->payment_method,
-                'provider'=>'stripe',
-                'status'=>'pending',
-                'amount'=>$request->total,
-                'transaction_id'=>$request->payment_intent,
-                'meta'=>json_encode($request->all()),
+                'user_id'  => $user->id,
+                'order_id' => $order->id,
+                'method'   => $request->payment_method,
+                'provider' => 'getnet',
+                'status'   => 'initiated',
+                'amount'   => $total,
+                'transaction_id' => null,
+                'meta' => json_encode([
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ]),
             ]);
 
             DB::commit();
 
-            try {
-                $this->sendOrderConfirmationEmail($order);
-            } catch (\Throwable $e) {
-                Log::warning('No se pudo enviar el email de confirmación del pedido', [
-                    'order_id' => $order->id,
-                    'error' => $e->getMessage(),
-                ]);}
-
             return response()->json([
-                'message'=>'Pedido creado exitosamente. Confirma el pago para procesarlo.',
-                'order'=>$order->load('orderItems.product','orderItems.pack','address'),
-                'tracking_number'=>$tracking_number,
-                'payment_client_secret'=>$request->payment_intent,
-            ],201);
+                'success' => true,
+                'message' => 'Pedido creado. Procede al pago.',
+                'order_id' => $order->id,
+                'tracking_number' => $tracking_number,
+                'total' => $total,
+            ], 201);
 
-        } catch(\Throwable $e){
+        } catch (\Throwable $e) {
+
             DB::rollBack();
-            Log::error('Error creando pedido', [
-                'error'=>$e->getMessage(),
-                'trace'=>$e->getTraceAsString(),
-                'payload'=>$request->all(),
+
+            Log::error('ORDER STORE ERROR', [
+                'user_id' => $user->id,
+                'error'   => $e->getMessage(),
             ]);
 
             return response()->json([
-                'error'=>'Error al crear el pedido',
-                'details'=>$e->getMessage(),
-            ],500);
+                'success' => false,
+                'error'   => 'No se pudo crear el pedido',
+            ], 500);
         }
     }
 

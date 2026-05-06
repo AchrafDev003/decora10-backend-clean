@@ -31,6 +31,7 @@ class Order extends Model
         'mobile1',
         'mobile2',
         'order_code',
+        'order_code_bank',
     ];
 
     protected $casts = [
