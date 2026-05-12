@@ -313,7 +313,7 @@ class OrderController extends Controller
                 'mobile1'=>$address->mobile1,
                 'mobile2'=>$address->mobile2 ?? null,
                 'payment_method'=>$request->payment_method,
-                'status'=>'pendiente',
+                'status'=>'pending_payment',
                 'tracking_number'=>$tracking_number,
                 'courier'=>null,
                 'estimated_delivery_date'=>$estimatedDelivery,
