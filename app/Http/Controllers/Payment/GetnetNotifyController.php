@@ -100,7 +100,7 @@ class GetnetNotifyController extends Controller
             // ==========================
             // 🛡️ IDEMPOTENCIA
             // ==========================
-            if ($payment->status === 'paid') {
+            if ($payment->status === 'pagado') {
                 return response('OK', 200);
             }
 
@@ -125,17 +125,17 @@ class GetnetNotifyController extends Controller
 
                 // ✔ PAGO CORRECTO
                 $payment->update([
-                    'status' => 'paid',
+                    'status' => 'pagado',
                     'transaction_id' => $authCode,
                 ]);
 
                 $order->update([
-                    'status' => 'paid'
+                    'status' => 'pagado'
                 ]);
 
                 OrderStatusHistory::create([
                     'order_id' => $order->id,
-                    'status'   => 'paid',
+                    'status'   => 'pagado',
                     'nota'     => 'Pago confirmado por Getnet',
                 ]);
 

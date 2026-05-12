@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Models\Order;
 
+
 class GetnetController extends Controller
 {
     public function createPayment(Request $request)
@@ -20,7 +21,7 @@ class GetnetController extends Controller
             $order = Order::with('payment')->findOrFail($request->order_id);
 
             // 🔥 Estado correcto
-            if ($order->status !== 'pending_payment') {
+            if ($order->status !== 'pendiente') {
                 return response()->json([
                     'success' => false,
                     'error'   => 'Pedido no disponible para pago',
@@ -28,7 +29,7 @@ class GetnetController extends Controller
             }
 
             // 🔥 Evitar doble pago
-            if ($order->payment && $order->payment->status === 'paid') {
+            if ($order->payment && $order->payment->status === 'pagado') {
                 return response()->json([
                     'success' => false,
                     'error'   => 'Pedido ya pagado',
