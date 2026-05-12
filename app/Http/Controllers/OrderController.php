@@ -125,6 +125,134 @@ class OrderController extends Controller
     // ==========================
     // Crear un pedido
     // ==========================
+    public function stores(Request $request)
+    {
+        $user = auth()->user();
+
+        $validated = $request->validate([
+            'payment_method'=>'required|string|in:card,paypal,cash,bizum',
+            'line1'=>'required|string','city'=>'required|string','country'=>'required|string',
+            'mobile1'=>'required|string',
+            'items'=>'required|array|min:1',
+            'items.*.product_id'=>'nullable|integer',
+            'items.*.pack_id'=>'nullable|integer',
+            'items.*.quantity'=>'required|integer|min:1',
+            'items.*.price'=>'required|numeric|min:0',
+            'items.*.cost'=>'nullable|numeric|min:0',
+            'subtotal'=>'required|numeric|min:0',
+            'discount'=>'nullable|numeric|min:0',
+            'total'=>'required|numeric|min:0',
+            'payment_intent'=>'nullable|string',
+            'promo_code'=>'nullable|string',
+            'coupon_type'=>'nullable|string|in:percent,fixed',
+            'address_type'=>'nullable|string',
+            'line2'=>'nullable|string',
+            'zipcode'=>'nullable|string',
+            'mobile2'=>'nullable|string',
+            'additional_info'=>'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $address = Address::create([
+                'user_id'=>$user->id,
+                'type'=>$request->address_type ?? 'default',
+                'line1'=>$request->line1,
+                'line2'=>$request->line2 ?? null,
+                'city'=>$request->city,
+                'zipcode'=>$request->zipcode ?? null,
+                'country'=>$request->country,
+                'mobile1'=>$request->mobile1,
+                'mobile2'=>$request->mobile2 ?? null,
+                'additional_info'=>$request->additional_info ?? '',
+                'is_default'=>1,
+            ]);
+
+            $tracking_number = 'DEC-ORD-' . strtoupper(Str::random(8));
+            $estimatedDelivery = Carbon::now()->addDays(5);
+
+            $order = Order::create([
+                'order_code'=>'DEC-' . strtoupper(Str::random(10)),
+                'user_id'=>$user->id,
+                'subtotal'=>$request->subtotal ?? 0.00,
+                'total'=>$request->total ?? 0.00,
+                'discount'=>$request->discount ?? 0.00,
+                'shipping_cost'=>$request->transport_fee ?? 0.00,
+                'tax'=>0.00,
+                'tax_rate'=>null,
+                'shipping_address'=>trim($address->line1 . ' ' . ($address->line2 ?? '')),
+                'address_id'=>$address->id,
+                'mobile1'=>$address->mobile1,
+                'mobile2'=>$address->mobile2 ?? null,
+                'payment_method'=>$request->payment_method,
+                'status'=>'pendiente',
+                'tracking_number'=>$tracking_number,
+                'courier'=>null,
+                'estimated_delivery_date'=>$estimatedDelivery,
+                'promo_code'=>$request->promo_code ?? null,
+                'coupon_type'=>in_array($request->coupon_type,['percent','fixed']) ? $request->coupon_type : null,
+            ]);
+
+            foreach($request->items as $item){
+                OrderItem::create([
+                    'order_id'=>$order->id,
+                    'product_id'=>$item['product_id'] ?? null,
+                    'pack_id'=>$item['pack_id'] ?? null,
+                    'quantity'=>$item['quantity'],
+                    'price'=>$item['price'],
+                    'cost'=>$item['cost'] ?? null,
+                ]);
+            }
+
+            OrderStatusHistory::create([
+                'order_id'=>$order->id,
+                'status'=>'pendiente',
+                'nota'=>'Pedido creado correctamente',
+            ]);
+
+            Payment::create([
+                'user_id'=>$user->id,
+                'order_id'=>$order->id,
+                'method'=>$request->payment_method,
+                'provider'=>'stripe',
+                'status'=>'pending',
+                'amount'=>$request->total,
+                'transaction_id'=>$request->payment_intent,
+                'meta'=>json_encode($request->all()),
+            ]);
+
+            DB::commit();
+
+            try {
+                $this->sendOrderConfirmationEmail($order);
+            } catch (\Throwable $e) {
+                Log::warning('No se pudo enviar el email de confirmación del pedido', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);}
+
+            return response()->json([
+                'message'=>'Pedido creado exitosamente. Confirma el pago para procesarlo.',
+                'order'=>$order->load('orderItems.product','orderItems.pack','address'),
+                'tracking_number'=>$tracking_number,
+                'payment_client_secret'=>$request->payment_intent,
+            ],201);
+
+        } catch(\Throwable $e){
+            DB::rollBack();
+            Log::error('Error creando pedido', [
+                'error'=>$e->getMessage(),
+                'trace'=>$e->getTraceAsString(),
+                'payload'=>$request->all(),
+            ]);
+
+            return response()->json([
+                'error'=>'Error al crear el pedido',
+                'details'=>$e->getMessage(),
+            ],500);
+        }
+    }
+
     public function store(Request $request)
     {
         $user = auth()->user();
@@ -253,178 +381,7 @@ class OrderController extends Controller
         }
     }
 
-    /*public function store(Request $request)
-    {
-        $user = auth()->user();
 
-        $validated = $request->validate([
-            'payment_method' => 'required|in:card,paypal,cash,bizum',
-
-            // 🔥 IMPORTANTE: ahora opcional si hay address_id
-            'address_id' => 'nullable|exists:addresses,id',
-
-            'line1' => 'required_without:address_id|string',
-            'city' => 'required_without:address_id|string',
-            'country' => 'required_without:address_id|string',
-            'mobile1' => 'required|string',
-
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|integer|min:1',
-
-            'promo_code' => 'nullable|string',
-            'zipcode' => 'nullable|string',
-        ]);
-
-        DB::beginTransaction();
-
-        try {
-
-            // =====================
-            // ADDRESS (REUTILIZAR O CREAR)
-            // =====================
-            if ($request->address_id) {
-                $address = Address::where('id', $request->address_id)
-                    ->where('user_id', $user->id)
-                    ->firstOrFail();
-            } else {
-                $address = Address::create([
-                    'user_id' => $user->id,
-                    'type' => 'shipping',
-                    'line1' => $request->line1,
-                    'line2' => $request->line2,
-                    'city' => $request->city,
-                    'zipcode' => $request->zipcode,
-                    'country' => $request->country,
-                    'mobile1' => $request->mobile1,
-                    'mobile2' => $request->mobile2,
-                    'additional_info' => $request->additional_info,
-                ]);
-            }
-
-            // =====================
-            // CALCULO BACKEND
-            // =====================
-            $subtotal = 0;
-            $items = [];
-
-            foreach ($request->items as $i) {
-
-                $product = Product::findOrFail($i['product_id']);
-
-                if ($product->stock < $i['quantity']) {
-                    throw new \Exception("Stock insuficiente: {$product->name}");
-                }
-
-                $line = $product->price * $i['quantity'];
-                $subtotal += $line;
-
-                $items[] = [
-                    'product_id' => $product->id,
-                    'quantity' => $i['quantity'],
-                    'price' => $product->price,
-                    'cost' => $product->cost ?? 0,
-                ];
-            }
-
-            // =====================
-            // DISCOUNT
-            // =====================
-            $discount = 0;
-
-            if ($request->promo_code === 'WELCOME10') {
-                $discount = $subtotal * 0.10;
-            }
-
-            // =====================
-            // SHIPPING
-            // =====================
-            $shipping = $request->shipping_cost ?? 0;
-
-            // =====================
-            // TOTAL
-            // =====================
-            $total = max(0, $subtotal - $discount + $shipping);
-
-            // =====================
-            // ORDER
-            // =====================
-            $order = Order::create([
-                'order_code' => 'DEC-' . strtoupper(Str::random(10)),
-                'user_id' => $user->id,
-
-                'subtotal' => $subtotal,
-                'discount' => $discount,
-                'shipping_cost' => $shipping,
-                'total' => $total,
-
-                'tax' => 0,
-                'tax_rate' => null,
-
-                // 🔥 SOLO ID (CLARO Y LIMPIO)
-                'address_id' => $address->id,
-
-                'mobile1' => $address->mobile1,
-                'mobile2' => $address->mobile2,
-
-                'payment_method' => $request->payment_method,
-                'status' => 'pendiente',
-
-                'tracking_number' => 'DEC-' . strtoupper(Str::random(8)),
-                'estimated_delivery_date' => now()->addDays(5),
-
-                'promo_code' => $request->promo_code,
-            ]);
-
-            // =====================
-            // ITEMS
-            // =====================
-            foreach ($items as $item) {
-                OrderItem::create([
-                    'order_id' => $order->id,
-                    ...$item
-                ]);
-            }
-
-            // =====================
-            // STATUS
-            // =====================
-            OrderStatusHistory::create([
-                'order_id' => $order->id,
-                'status' => 'pendiente',
-                'nota' => 'Pedido creado',
-            ]);
-
-            // =====================
-            // PAYMENT
-            // =====================
-            Payment::create([
-                'user_id' => $user->id,
-                'order_id' => $order->id,
-                'method' => $request->payment_method,
-                'provider' => 'getnet',
-                'status' => 'initiated',
-                'amount' => $total,
-                'transaction_id' => null,
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'order' => $order,
-                'total' => $total,
-            ], 201);
-
-        } catch (\Throwable $e) {
-            DB::rollBack();
-
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }*/
 
     // ==========================
     // Métodos track, getOrders y estadísticas

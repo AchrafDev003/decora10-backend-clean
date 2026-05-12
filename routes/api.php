@@ -91,18 +91,23 @@ Route::get('/test-perm', function () {
 |--------------------------------------------------------------------------
 */
 Route::prefix('v1')->group(function () {
+    // 🔐 NOTIFY (SERVER TO SERVER - CRÍTICO)
     Route::post('/payment/notify', [GetnetNotifyController::class, 'notify'])
         ->name('payment.notify');
 
+// ✅ OK (REDIRECCIÓN USUARIO)
     Route::get('/payment/ok', function () {
-        return response()->json(['status' => 'ok']);
+        return redirect('/gracias'); // 👈 frontend route
     })->name('payment.ok');
 
+// ❌ KO (ERROR DE PAGO)
     Route::get('/payment/ko', function () {
-        return response()->json(['status' => 'ko']);
+        return redirect('/checkout?error=pago');
     })->name('payment.ko');
-    Route::post('/payment/getnet/init', [GetnetController::class, 'createPayment'])
-        ->name('payment.getnet.init');
+
+// 💳 INIT GETNET (LO QUE LLAMA TU FRONTEND)
+    Route::post('/payment/getnet', [GetnetController::class, 'createPayment'])
+        ->name('payment.getnet');
     // Webhook Stripe (no requiere auth)
     Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle']);
 

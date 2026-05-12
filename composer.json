@@ -17,7 +17,8 @@
         "laravel/tinker": "^2.10.1",
         "s-ichikawa/laravel-sendgrid-driver": "^4.0",
         "spatie/laravel-permission": "^6.17",
-        "stripe/stripe-php": "^18.2"
+        "stripe/stripe-php": "^18.2",
+        "ext-openssl": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

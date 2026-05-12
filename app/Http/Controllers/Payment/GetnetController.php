@@ -17,24 +17,17 @@ class GetnetController extends Controller
 
         try {
 
-            // ==========================
-            // 🔎 Obtener pedido
-            // ==========================
-            $order = Order::findOrFail($request->order_id);
+            $order = Order::with('payment')->findOrFail($request->order_id);
 
-            // ==========================
-            // 🛡️ Estado válido
-            // ==========================
-            if (!in_array($order->status, ['pendiente', 'pending'])) {
+            // 🔥 Estado correcto
+            if ($order->status !== 'pending_payment') {
                 return response()->json([
                     'success' => false,
                     'error'   => 'Pedido no disponible para pago',
                 ], 400);
             }
 
-            // ==========================
-            // 🛡️ Evitar doble pago
-            // ==========================
+            // 🔥 Evitar doble pago
             if ($order->payment && $order->payment->status === 'paid') {
                 return response()->json([
                     'success' => false,
@@ -42,9 +35,6 @@ class GetnetController extends Controller
                 ], 400);
             }
 
-            // ==========================
-            // 💰 Validación total
-            // ==========================
             if (!$order->total || $order->total <= 0) {
                 return response()->json([
                     'success' => false,
@@ -54,25 +44,18 @@ class GetnetController extends Controller
 
             $amountCents = (int) round($order->total * 100);
 
-            // ==========================
-            // 🔥 OrderCode seguro (12 chars max)
-            // ==========================
-            $orderCode = substr((string) ($order->id . time()), 0, 12);
+            // 🔥 Código bancario válido
+            $orderCode = str_pad($order->id, 12, "0", STR_PAD_LEFT);
 
             $order->update([
                 'order_code_bank' => $orderCode
             ]);
 
-            // ==========================
             // 🔐 Config
-            // ==========================
-            $merchantCode = env('GETNET_MERCHANT');
-            $terminal     = env('GETNET_TERMINAL');
-            $secretKey    = env('GETNET_SECRET');
+            $merchantCode = config('getnet.merchant');
+            $terminal     = config('getnet.terminal');
+            $secretKey    = config('getnet.secret');
 
-            // ==========================
-            // 📦 Params
-            // ==========================
             $params = [
                 "DS_MERCHANT_AMOUNT"          => $amountCents,
                 "DS_MERCHANT_ORDER"           => $orderCode,
@@ -80,15 +63,11 @@ class GetnetController extends Controller
                 "DS_MERCHANT_CURRENCY"        => "978",
                 "DS_MERCHANT_TRANSACTIONTYPE" => "0",
                 "DS_MERCHANT_TERMINAL"        => $terminal,
-
-                "DS_MERCHANT_MERCHANTURL" => route('payment.notify'),
-                "DS_MERCHANT_URLOK"       => route('payment.ok'),
-                "DS_MERCHANT_URLKO"       => route('payment.ko'),
+                "DS_MERCHANT_MERCHANTURL"     => route('payment.notify'),
+                "DS_MERCHANT_URLOK"           => route('payment.ok'),
+                "DS_MERCHANT_URLKO"           => route('payment.ko'),
             ];
 
-            // ==========================
-            // 🔄 FIX FIRMA ESTABLE
-            // ==========================
             ksort($params);
 
             $paramsBase64 = base64_encode(
@@ -97,15 +76,9 @@ class GetnetController extends Controller
 
             $signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
 
-            Log::info('Getnet INIT', [
-                'order_id'   => $order->id,
-                'order_code' => $orderCode,
-                'amount'     => $amountCents,
-            ]);
-
             return response()->json([
                 'success'    => true,
-                'gatewayUrl' => env('GETNET_URL'),
+                'gatewayUrl' => config('getnet.url'),
                 'params'     => $paramsBase64,
                 'signature'  => $signature,
                 'version'    => 'HMAC_SHA256_V1',
@@ -115,7 +88,6 @@ class GetnetController extends Controller
 
             Log::error('Getnet ERROR', [
                 'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
             ]);
 
             return response()->json([
