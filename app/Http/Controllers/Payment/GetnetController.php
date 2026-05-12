@@ -69,7 +69,7 @@ class GetnetController extends Controller
                 "DS_MERCHANT_URLKO"           => route('payment.ko'),
             ];
 
-            ksort($params);
+            ksort($params, SORT_STRING);
 
             $paramsBase64 = base64_encode(
                 json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
@@ -86,6 +86,9 @@ class GetnetController extends Controller
             ]);
 
         } catch (\Throwable $e) {
+            Log::info('GETNET PARAMS FINAL', $params);
+            Log::info('ORDER CODE', [$orderCode]);
+            Log::info('AMOUNT CENTS', [$amountCents]);
 
             Log::error('Getnet ERROR', [
                 'message' => $e->getMessage(),
