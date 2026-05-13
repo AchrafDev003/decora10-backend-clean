@@ -46,7 +46,8 @@ class GetnetController extends Controller
             $amountCents = (int) round($order->total * 100);
 
             // 🔥 Código bancario válido
-            $orderCode = str_pad($order->id, 12, "0", STR_PAD_LEFT);
+            //$orderCode = str_pad($order->id, 12, "0", STR_PAD_LEFT);  genera IDs tipo 000000000096
+            $orderCode = 'DEC' . $order->id . time();
 
             $order->update([
                 'order_code_bank' => $orderCode
@@ -69,11 +70,17 @@ class GetnetController extends Controller
                 "DS_MERCHANT_URLKO"           => route('payment.ko'),
             ];
 
-            ksort($params, SORT_STRING);
+
 
             $paramsBase64 = base64_encode(
                 json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
             );
+            Log::info('REDSYS CHECK', [
+                'merchant' => $merchantCode,
+                'terminal' => $terminal,
+                'order' => $orderCode,
+                'amount' => $amountCents,
+            ]);
 
             $signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
 
