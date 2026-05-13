@@ -7,7 +7,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Models\Order;
 
-
 class GetnetController extends Controller
 {
     public function createPayment(Request $request)
@@ -16,11 +15,15 @@ class GetnetController extends Controller
             'order_id' => 'required|integer|exists:orders,id',
         ]);
 
+        $params = [];
+        $orderCode = null;
+        $amountCents = null;
+
         try {
 
             $order = Order::with('payment')->findOrFail($request->order_id);
 
-            // 🔥 Estado correcto
+            // 🔥 Validaciones
             if ($order->status !== 'pendiente') {
                 return response()->json([
                     'success' => false,
@@ -28,7 +31,6 @@ class GetnetController extends Controller
                 ], 400);
             }
 
-            // 🔥 Evitar doble pago
             if ($order->payment && $order->payment->status === 'pagado') {
                 return response()->json([
                     'success' => false,
@@ -43,21 +45,23 @@ class GetnetController extends Controller
                 ], 422);
             }
 
+            // 🔥 IMPORTE EN CENTIMOS
             $amountCents = (int) round($order->total * 100);
 
-            // 🔥 Código bancario válido
-            //$orderCode = str_pad($order->id, 12, "0", STR_PAD_LEFT);  genera IDs tipo 000000000096
+            // 🔥 ORDER FORMAT REDSYS (máx 12 chars)
             $orderCode = str_pad((string)$order->id, 12, "0", STR_PAD_LEFT);
 
             $order->update([
                 'order_code_bank' => $orderCode
             ]);
 
-            // 🔐 Config
+            // 🔐 CONFIG
             $merchantCode = config('getnet.merchant');
             $terminal     = config('getnet.terminal');
             $secretKey    = config('getnet.secret');
+            $gatewayUrl   = config('getnet.url');
 
+            // 🔥 PARAMS REDSYS (ORDEN FIJO OBLIGATORIO)
             $params = [
                 "DS_MERCHANT_AMOUNT"          => $amountCents,
                 "DS_MERCHANT_ORDER"           => $orderCode,
@@ -70,35 +74,42 @@ class GetnetController extends Controller
                 "DS_MERCHANT_URLKO"           => route('payment.ko'),
             ];
 
+            // 🔥 IMPORTANTE: ordenar SIEMPRE antes de firmar
+            ksort($params);
 
+            // 🔐 JSON estable
+            $jsonParams = json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $paramsBase64 = base64_encode($jsonParams);
 
-            $paramsBase64 = base64_encode(
-                json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-            );
-            Log::info('REDSYS CHECK', [
-                'merchant' => $merchantCode,
-                'terminal' => $terminal,
-                'order' => $orderCode,
-                'amount' => $amountCents,
-            ]);
-
+            // 🔐 FIRMA
             $signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
+
+            // 🔍 LOG DEBUG (CLAVE PARA ERRORES REDSYS)
+            Log::info('REDSYS PAYLOAD FINAL', [
+                'merchant'  => $merchantCode,
+                'terminal'  => $terminal,
+                'order'     => $orderCode,
+                'amount'    => $amountCents,
+                'json'      => $jsonParams,
+                'base64'    => $paramsBase64,
+                'signature' => $signature,
+            ]);
 
             return response()->json([
                 'success'    => true,
-                'gatewayUrl' => config('getnet.url'),
+                'gatewayUrl' => $gatewayUrl,
                 'params'     => $paramsBase64,
                 'signature'  => $signature,
                 'version'    => 'HMAC_SHA256_V1',
             ]);
 
         } catch (\Throwable $e) {
-            Log::info('GETNET PARAMS FINAL', $params);
-            Log::info('ORDER CODE', [$orderCode]);
-            Log::info('AMOUNT CENTS', [$amountCents]);
 
-            Log::error('Getnet ERROR', [
+            Log::error('GETNET ERROR', [
                 'message' => $e->getMessage(),
+                'order'   => $orderCode,
+                'amount'  => $amountCents,
+                'params'  => $params,
             ]);
 
             return response()->json([
@@ -109,17 +120,18 @@ class GetnetController extends Controller
     }
 
     /**
-     * 🔐 Firma Redsys compatible estable
+     * 🔐 FIRMA REDSYS (HMAC_SHA256_V1)
      */
     private function generateSignature($paramsBase64, $secretKey, $orderCode)
     {
-        // 🔐 1. Decodificar clave base64
         $key = base64_decode($secretKey);
 
-        // 🔐 2. Padding del order (block 8 bytes)
-        $orderPadded = str_pad($orderCode, ceil(strlen($orderCode) / 8) * 8, "\0");
+        $orderPadded = str_pad(
+            $orderCode,
+            ceil(strlen($orderCode) / 8) * 8,
+            "\0"
+        );
 
-        // 🔐 3. 3DES encryption (CLAVE CORRECTA)
         $iv = "\0\0\0\0\0\0\0\0";
 
         $derivedKey = openssl_encrypt(
@@ -130,7 +142,6 @@ class GetnetController extends Controller
             $iv
         );
 
-        // 🔐 4. HMAC SHA256
         $signature = hash_hmac(
             'sha256',
             $paramsBase64,
@@ -138,7 +149,6 @@ class GetnetController extends Controller
             true
         );
 
-        // 🔐 5. Base64 final
         return base64_encode($signature);
     }
 }
