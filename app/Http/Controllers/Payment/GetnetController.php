@@ -160,11 +160,12 @@ class GetnetController extends Controller
     // ==========================================
     private function generateSignature($paramsBase64, $secretKey, $orderCode)
     {
-        $key = base64_decode($secretKey);
+        $key = $secretKey; // ❌ NO base64_decode
 
-        // 🔥 CLAVE: SIN padding manual
+        // 🔥 IV estándar Redsys
         $iv = "\0\0\0\0\0\0\0\0";
 
+        // 🔥 SIN padding manual
         $derivedKey = openssl_encrypt(
             $orderCode,
             'DES-EDE3-CBC',
