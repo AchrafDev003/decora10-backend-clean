@@ -92,16 +92,14 @@ class GetnetController extends Controller
             // =========================
             // 🔐 ORDER FIX (IMPORTANTE)
             // =========================
-            ksort($params);
+            //ksort($params);
 
             // =========================
             // 📦 JSON SEGURO
             // =========================
             $jsonParams = json_encode(
                 $params,
-                JSON_UNESCAPED_UNICODE |
-                JSON_UNESCAPED_SLASHES |
-                JSON_PRESERVE_ZERO_FRACTION
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
             );
 
             if (!$jsonParams) {
@@ -109,6 +107,11 @@ class GetnetController extends Controller
             }
 
             $paramsBase64 = base64_encode($jsonParams);
+            $validation = RedsysValidator::validate($params, $paramsBase64, 'temp');
+            if (!$validation['valid']) {
+                Log::error('REDSYS VALIDATION ERROR', $validation['errors']);
+                throw new \Exception('Error validando parámetros Redsys');
+            }
 
             // =========================
             // 🔐 FIRMA
@@ -159,19 +162,14 @@ class GetnetController extends Controller
     {
         $key = base64_decode($secretKey);
 
-        $orderPadded = str_pad(
-            $orderCode,
-            ceil(strlen($orderCode) / 8) * 8,
-            "\0"
-        );
-
+        // 🔥 CLAVE: SIN padding manual
         $iv = "\0\0\0\0\0\0\0\0";
 
         $derivedKey = openssl_encrypt(
-            $orderPadded,
+            $orderCode,
             'DES-EDE3-CBC',
             $key,
-            OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING,
+            OPENSSL_RAW_DATA,
             $iv
         );
 
