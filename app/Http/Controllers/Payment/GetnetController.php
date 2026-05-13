@@ -121,6 +121,15 @@ class GetnetController extends Controller
             // =========================
             // 🔍 LOGS DEBUG
             // =========================
+            Log::info('REDSYS PAYLOAD FINAL', [
+                'merchant'  => $merchantCode,
+                'terminal'  => $terminal,
+                'order'     => $orderCode,
+                'amount'    => $amountCents,
+                'json'      => $jsonParams,
+                'base64'    => $paramsBase64,
+                'signature' => $signature,
+            ]);
             dd([
                 'merchant'  => $merchantCode,
                 'terminal'  => $terminal,
