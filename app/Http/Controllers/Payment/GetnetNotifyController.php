@@ -55,13 +55,22 @@ class GetnetNotifyController extends Controller
             // ==========================
             $secretKey = base64_decode(env('GETNET_SECRET'));
 
+// 🔐 Padding obligatorio
+            $orderPadded = str_pad($orderCode, ceil(strlen($orderCode) / 8) * 8, "\0");
+
+// 🔐 IV requerido por Redsys
+            $iv = "\0\0\0\0\0\0\0\0";
+
+// 🔐 3DES correcto
             $derivedKey = openssl_encrypt(
-                $orderCode,
-                'AES-128-ECB',
+                $orderPadded,
+                'DES-EDE3-CBC',
                 $secretKey,
-                OPENSSL_RAW_DATA
+                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING,
+                $iv
             );
 
+// 🔐 Firma final
             $expectedSignature = base64_encode(
                 hash_hmac('sha256', $merchantParams, $derivedKey, true)
             );
