@@ -70,8 +70,9 @@ class GetnetController extends Controller
                 "DS_MERCHANT_TRANSACTIONTYPE" => "0",
                 "DS_MERCHANT_TERMINAL"        => $terminal,
                 "DS_MERCHANT_MERCHANTURL"     => route('payment.notify'),
-                "DS_MERCHANT_URLOK"           => route('payment.ok'),
-                "DS_MERCHANT_URLKO"           => route('payment.ko'),
+                // 🔥 FRONTEND (REDIRECCIÓN USUARIO)
+                "DS_MERCHANT_URLOK"           => env('FRONTEND_URL') . "/gracias",
+                "DS_MERCHANT_URLKO"           => env('FRONTEND_URL') . "/checkout?error=pago",
             ];
 
             // 🔥 IMPORTANTE: ordenar SIEMPRE antes de firmar
