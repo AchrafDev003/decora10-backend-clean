@@ -130,22 +130,23 @@ class GetnetController extends Controller
                 'base64'    => $paramsBase64,
                 'signature' => $signature,
             ]);
-            dd([
-                'merchant'  => $merchantCode,
-                'terminal'  => $terminal,
-                'order'     => $orderCode,
-                'amount'    => $amountCents,
-                'json'      => $jsonParams,
-                'base64'    => $paramsBase64,
-                'signature' => $signature,
-            ]);
-
             return response()->json([
-                'success'    => true,
+                'success' => true,
+
                 'gatewayUrl' => $gatewayUrl,
-                'params'     => $paramsBase64,
-                'signature'  => $signature,
-                'version'    => 'HMAC_SHA256_V1',
+                'params' => $paramsBase64,
+                'signature' => $signature,
+                'version' => 'HMAC_SHA256_V1',
+
+                'debug' => [
+                    'merchant'  => $merchantCode,
+                    'terminal'  => $terminal,
+                    'order'     => $orderCode,
+                    'amount'    => $amountCents,
+                    'json'      => json_decode($jsonParams, true),
+                    'base64'    => $paramsBase64,
+                    'signature' => $signature,
+                ]
             ]);
 
         } catch (\Throwable $e) {
