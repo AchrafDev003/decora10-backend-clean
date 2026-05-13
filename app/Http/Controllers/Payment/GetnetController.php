@@ -47,7 +47,7 @@ class GetnetController extends Controller
 
             // 🔥 Código bancario válido
             //$orderCode = str_pad($order->id, 12, "0", STR_PAD_LEFT);  genera IDs tipo 000000000096
-            $orderCode = 'DEC' . $order->id . time();
+            $orderCode = str_pad((string)$order->id, 12, "0", STR_PAD_LEFT);
 
             $order->update([
                 'order_code_bank' => $orderCode
