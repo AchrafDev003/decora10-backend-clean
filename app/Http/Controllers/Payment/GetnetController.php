@@ -146,6 +146,8 @@ class GetnetController extends Controller
                     'json'      => json_decode($jsonParams, true),
                     'base64'    => $paramsBase64,
                     'signature' => $signature,
+
+                    'secret_length' => strlen($secretKey),
                 ]
             ]);
 
