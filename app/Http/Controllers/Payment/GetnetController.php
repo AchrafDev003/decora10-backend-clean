@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Models\Order;
-use App\Services\RedsysValidator;
 
 class GetnetController extends Controller
 {
@@ -16,63 +15,48 @@ class GetnetController extends Controller
             'order_id' => 'required|integer|exists:orders,id',
         ]);
 
-        $params = [];
-        $orderCode = null;
-        $amountCents = null;
-
         try {
 
             $order = Order::with('payment')->findOrFail($request->order_id);
 
-            // =========================
-            // 🔥 VALIDACIONES NEGOCIO
-            // =========================
             if ($order->status !== 'pendiente') {
                 return response()->json([
                     'success' => false,
-                    'error'   => 'Pedido no disponible para pago',
+                    'error' => 'Pedido no disponible'
                 ], 400);
             }
 
             if ($order->payment && $order->payment->status === 'pagado') {
                 return response()->json([
                     'success' => false,
-                    'error'   => 'Pedido ya pagado',
+                    'error' => 'Pedido ya pagado'
                 ], 400);
             }
 
             if (!$order->total || $order->total <= 0) {
                 return response()->json([
                     'success' => false,
-                    'error'   => 'Total inválido',
+                    'error' => 'Total inválido'
                 ], 422);
             }
 
-            // =========================
-            // 💰 IMPORTE EN CENTIMOS
-            // =========================
+            // 💰 importe en céntimos
             $amountCents = (int) round($order->total * 100);
 
-            // =========================
-            // 🧾 ORDER REDSYS (MAX 12)
-            // =========================
+            // 🧾 order (12 chars)
             $orderCode = str_pad((string)$order->id, 12, "0", STR_PAD_LEFT);
 
             $order->update([
                 'order_code_bank' => $orderCode
             ]);
 
-            // =========================
-            // 🔐 CONFIG
-            // =========================
-            $merchantCode = (string) config('getnet.merchant');
-            $terminal     = (string) config('getnet.terminal');
-            $secretKey    = (string) config('getnet.secret');
-            $gatewayUrl   = (string) config('getnet.url');
+            // 🔐 config
+            $merchantCode = config('getnet.merchant');
+            $terminal     = config('getnet.terminal');
+            $secretKey    = config('getnet.secret');
+            $gatewayUrl   = config('getnet.url');
 
-            // =========================
-            // 📦 PARAMS REDSYS
-            // =========================
+            // 📦 params
             $params = [
                 "DS_MERCHANT_AMOUNT"          => (string) $amountCents,
                 "DS_MERCHANT_ORDER"           => $orderCode,
@@ -80,111 +64,67 @@ class GetnetController extends Controller
                 "DS_MERCHANT_CURRENCY"        => "978",
                 "DS_MERCHANT_TRANSACTIONTYPE" => "0",
                 "DS_MERCHANT_TERMINAL"        => $terminal,
-
-                // 🔥 BACKEND NOTIFY (OBLIGATORIO)
                 "DS_MERCHANT_MERCHANTURL"     => config('app.url') . "/api/v1/payment/notify",
-
-                // 🔥 FRONTEND REDIRECT
                 "DS_MERCHANT_URLOK"           => rtrim(env('FRONTEND_URL'), '/') . "/gracias",
                 "DS_MERCHANT_URLKO"           => rtrim(env('FRONTEND_URL'), '/') . "/checkout?error=pago",
             ];
 
-            // =========================
-            // 🔐 ORDER FIX (IMPORTANTE)
-            // =========================
-            //ksort($params);
+            $json = json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-            // =========================
-            // 📦 JSON SEGURO
-            // =========================
-            $jsonParams = json_encode(
-                $params,
-                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-            );
-
-            if (!$jsonParams) {
-                throw new \Exception('JSON inválido en parámetros Redsys');
+            if (!$json) {
+                throw new \Exception('JSON inválido');
             }
 
-            $paramsBase64 = base64_encode($jsonParams);
-            $validation = RedsysValidator::validate($params, $paramsBase64, 'temp');
-            if (!$validation['valid']) {
-                Log::error('REDSYS VALIDATION ERROR', $validation['errors']);
-                throw new \Exception('Error validando parámetros Redsys');
-            }
+            // 🔥 BASE64 NORMAL (correcto para SHA256)
+            $paramsBase64 = base64_encode($json);
 
-            // =========================
             // 🔐 FIRMA
-            // =========================
             $signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
 
-            // =========================
-            // 🔍 LOGS DEBUG
-            // =========================
-            Log::info('REDSYS PAYLOAD FINAL', [
-                'merchant'  => $merchantCode,
-                'terminal'  => $terminal,
-                'order'     => $orderCode,
-                'amount'    => $amountCents,
-                'json'      => $jsonParams,
-                'base64'    => $paramsBase64,
-                'signature' => $signature,
+            Log::info('REDSYS OK', [
+                'order' => $orderCode,
+                'amount' => $amountCents,
             ]);
+
             return response()->json([
                 'success' => true,
-
                 'gatewayUrl' => $gatewayUrl,
                 'params' => $paramsBase64,
                 'signature' => $signature,
-                'version' => 'HMAC_SHA256_V1',
-
-                'debug' => [
-                    'merchant'  => $merchantCode,
-                    'terminal'  => $terminal,
-                    'order'     => $orderCode,
-                    'amount'    => $amountCents,
-                    'json'      => json_decode($jsonParams, true),
-                    'base64'    => $paramsBase64,
-                    'signature' => $signature,
-
-                    'secret_length' => strlen($secretKey),
-                ]
+                'version' => 'HMAC_SHA256_V1'
             ]);
 
         } catch (\Throwable $e) {
 
             Log::error('GETNET ERROR', [
-                'message' => $e->getMessage(),
-                'order'   => $orderCode,
-                'amount'  => $amountCents,
-                'params'  => $params,
+                'message' => $e->getMessage()
             ]);
 
             return response()->json([
                 'success' => false,
-                'error'   => 'Error iniciando pago',
+                'error' => 'Error iniciando pago'
             ], 500);
         }
     }
 
-    // ==========================================
-    // 🔐 FIRMA REDSYS OFICIAL (HMAC SHA256)
-    // ==========================================
+    // 🔐 FIRMA SHA256 CORRECTA (GETNET / REDSYS CLÁSICO)
     private function generateSignature($paramsBase64, $secretKey, $orderCode)
     {
-        $key = base64_decode($secretKey);
+        // ✔ clave RAW (tu caso)
+        $key = $secretKey;
 
-        $orderPadded = str_pad($orderCode, 8, "\0", STR_PAD_RIGHT);
+        // 🔥 SOLO los primeros 8 caracteres (CRÍTICO)
+        $order8 = substr($orderCode, 0, 8);
 
-        $iv = str_repeat("\0", 8);
-
+        // 🔐 derivar clave
         $derivedKey = openssl_encrypt(
-            $orderPadded,
+            $order8,
             'DES-EDE3-ECB',
             $key,
             OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING
         );
 
+        // 🔐 firma final
         return base64_encode(
             hash_hmac('sha256', $paramsBase64, $derivedKey, true)
         );
