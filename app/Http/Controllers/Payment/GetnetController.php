@@ -79,19 +79,22 @@ class GetnetController extends Controller
             $paramsBase64 = base64_encode($json);
 
             // 🔐 FIRMA
-            $signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
+            //$signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
 
             Log::info('REDSYS OK', [
                 'order' => $orderCode,
                 'amount' => $amountCents,
             ]);
-
+            $recalculated = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
+            $signature = $recalculated; // si solo quieres test
             return response()->json([
                 'success' => true,
                 'gatewayUrl' => $gatewayUrl,
                 'params' => $paramsBase64,
                 'signature' => $signature,
-                'version' => 'HMAC_SHA256_V1'
+                'recalculated_signature' => $recalculated,
+                'match' => hash_equals($signature, $recalculated),
+                'version' => 'HMAC_SHA256_V1',
             ]);
 
         } catch (\Throwable $e) {
