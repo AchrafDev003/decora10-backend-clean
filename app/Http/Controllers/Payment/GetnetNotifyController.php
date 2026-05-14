@@ -16,66 +16,56 @@ class GetnetNotifyController extends Controller
         try {
 
             // ==========================
-            // 📥 Obtener datos
+            // 📥 Datos
             // ==========================
             $merchantParams = $request->input('Ds_MerchantParameters');
             $signature      = $request->input('Ds_Signature');
 
             if (!$merchantParams || !$signature) {
-                Log::warning('Getnet notify inválido - faltan parámetros');
                 return response('KO', 400);
             }
 
             // ==========================
-            // 🔓 Decodificar parámetros
+            // 🔓 Decode
             // ==========================
-            $decodedParams = json_decode(base64_decode($merchantParams), true);
+            $decoded = json_decode(base64_decode($merchantParams), true);
 
-            if (!$decodedParams) {
-                Log::error('Error decodificando parámetros Getnet');
+            if (!$decoded) {
                 return response('KO', 400);
             }
 
-            Log::info('Getnet RAW', $decodedParams);
+            Log::info('GETNET NOTIFY RAW', $decoded);
 
             // ==========================
-            // 📊 Extraer datos
+            // 📊 Datos clave
             // ==========================
-            $orderCode = $decodedParams['Ds_Order'] ?? null;
-            $response  = intval($decodedParams['Ds_Response'] ?? 9999);
-            $authCode  = $decodedParams['Ds_AuthorisationCode'] ?? null;
-            $amount    = intval($decodedParams['Ds_Amount'] ?? 0);
+            $orderCode = $decoded['Ds_Order'] ?? null;
+            $response  = intval($decoded['Ds_Response'] ?? 9999);
+            $amount    = intval($decoded['Ds_Amount'] ?? 0);
+            $authCode  = $decoded['Ds_AuthorisationCode'] ?? null;
 
             if (!$orderCode) {
                 return response('KO', 400);
             }
 
             // ==========================
-            // 🔐 Validar firma
+            // 🔐 VALIDAR FIRMA (CORRECTO)
             // ==========================
-            $secretKey = base64_decode(env('GETNET_SECRET'));
+            $secretKey = config('getnet.secret'); // ✔ RAW
 
-// 🔐 Padding obligatorio
-            $orderPadded = str_pad($orderCode, ceil(strlen($orderCode) / 8) * 8, "\0");
+            $order8 = substr($orderCode, 0, 8);
 
-// 🔐 IV requerido por Redsys
-            $iv = "\0\0\0\0\0\0\0\0";
-
-// 🔐 3DES correcto
             $derivedKey = openssl_encrypt(
-                $orderPadded,
-                'DES-EDE3-CBC',
+                $order8,
+                'DES-EDE3-ECB',
                 $secretKey,
-                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING,
-                $iv
+                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING
             );
 
-// 🔐 Firma final
             $expectedSignature = base64_encode(
                 hash_hmac('sha256', $merchantParams, $derivedKey, true)
             );
 
-            // 🔥 Comparación segura
             if (!hash_equals($expectedSignature, $signature)) {
                 Log::error('Firma inválida', [
                     'expected' => $expectedSignature,
@@ -85,29 +75,24 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 🔎 Buscar pedido (CORRECTO)
+            // 🔎 Pedido
             // ==========================
             $order = Order::where('order_code_bank', $orderCode)->first();
 
             if (!$order) {
-                Log::error('Pedido no encontrado', ['order_code' => $orderCode]);
                 return response('KO', 404);
             }
 
-            // ==========================
-            // 🔎 Obtener pago
-            // ==========================
             $payment = Payment::where('order_id', $order->id)
                 ->where('provider', 'getnet')
                 ->first();
 
             if (!$payment) {
-                Log::error('Pago no encontrado', ['order_id' => $order->id]);
                 return response('KO', 404);
             }
 
             // ==========================
-            // 🛡️ IDEMPOTENCIA
+            // 🛡️ Idempotencia
             // ==========================
             if ($payment->status === 'pagado') {
                 return response('OK', 200);
@@ -119,28 +104,21 @@ class GetnetNotifyController extends Controller
             $expectedAmount = (int) round($order->total * 100);
 
             if ($amount !== $expectedAmount) {
-                Log::error('Importe no coincide', [
-                    'order_id' => $order->id,
-                    'expected' => $expectedAmount,
-                    'received' => $amount
-                ]);
+                Log::error('Importe incorrecto');
                 return response('KO', 400);
             }
 
             // ==========================
-            // 💳 Procesar resultado
+            // 💳 Resultado
             // ==========================
             if ($response >= 0 && $response <= 99) {
 
-                // ✔ PAGO CORRECTO
                 $payment->update([
                     'status' => 'pagado',
                     'transaction_id' => $authCode,
                 ]);
 
-                $order->update([
-                    'status' => 'pagado'
-                ]);
+                $order->update(['status' => 'pagado']);
 
                 OrderStatusHistory::create([
                     'order_id' => $order->id,
@@ -148,40 +126,28 @@ class GetnetNotifyController extends Controller
                     'nota'     => 'Pago confirmado por Getnet',
                 ]);
 
-                Log::info('Pago confirmado', [
-                    'order_id' => $order->id,
-                    'auth_code' => $authCode
-                ]);
+                Log::info('Pago OK', ['order' => $order->id]);
 
             } else {
 
-                // ❌ PAGO FALLIDO
-                $payment->update([
-                    'status' => 'failed',
-                ]);
-
-                $order->update([
-                    'status' => 'failed'
-                ]);
+                $payment->update(['status' => 'failed']);
+                $order->update(['status' => 'failed']);
 
                 OrderStatusHistory::create([
                     'order_id' => $order->id,
                     'status'   => 'failed',
-                    'nota'     => 'Pago rechazado por Getnet',
+                    'nota'     => 'Pago rechazado',
                 ]);
 
-                Log::warning('Pago rechazado', [
-                    'order_id' => $order->id,
-                    'response' => $response
-                ]);
+                Log::warning('Pago KO', ['response' => $response]);
             }
 
             return response('OK', 200);
 
         } catch (\Throwable $e) {
 
-            Log::error('Error en notify Getnet', [
-                'message' => $e->getMessage(),
+            Log::error('Notify error', [
+                'message' => $e->getMessage()
             ]);
 
             return response('KO', 500);
