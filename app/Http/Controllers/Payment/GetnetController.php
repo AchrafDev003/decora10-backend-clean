@@ -44,8 +44,9 @@ class GetnetController extends Controller
             $amountCents = (int) round($order->total * 100);
 
             // 🧾 order (12 chars)
-            $orderCode = str_pad((string)$order->id, 12, "0", STR_PAD_LEFT);
-
+            //$orderCode = str_pad((string)$order->id, 12, "0", STR_PAD_LEFT);
+            $orderCode = date('His') . $order->id;
+            $orderCode = substr($orderCode, 0, 12);
             $order->update([
                 'order_code_bank' => $orderCode
             ]);
