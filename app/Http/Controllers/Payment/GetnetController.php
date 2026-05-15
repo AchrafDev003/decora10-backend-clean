@@ -22,130 +22,104 @@ class GetnetController extends Controller
             if ($order->status !== 'pendiente') {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Pedido no disponible'
+                    'error' => 'Order not available'
                 ], 400);
             }
 
-            if ($order->payment && $order->payment->status === 'pagado') {
+            if ($order->payment?->status === 'pagado') {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Pedido ya pagado'
+                    'error' => 'Already paid'
                 ], 400);
             }
 
-            if (!$order->total || $order->total <= 0) {
+            if ($order->total <= 0) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Total inválido'
+                    'error' => 'Invalid total'
                 ], 422);
             }
 
             // ==========================
-            // 💰 IMPORTE EN CÉNTIMOS
+            // AMOUNT
             // ==========================
-            $amountCents = (int) round($order->total * 100);
+            $amount = (int) round($order->total * 100);
 
             // ==========================
-            // 🧾 ORDER 12 DIGITOS FIJO
-            // (EVITA RANDOM + PROBLEMAS REDSYS)
+            // ORDER CODE (12 DIGITS FIXED)
             // ==========================
-            $orderCode = str_pad((string) $order->id, 12, '0', STR_PAD_LEFT);
+            $orderCode = str_pad((string)$order->id, 12, '0', STR_PAD_LEFT);
 
             $order->update([
                 'order_code_bank' => $orderCode
             ]);
 
             // ==========================
-            // 🔐 CONFIG
+            // CONFIG
             // ==========================
-            $merchantCode = config('getnet.merchant');
-            $terminal     = (string) config('getnet.terminal'); // IMPORTANTE STRING
-            $secretKey    = config('getnet.secret');
-            $gatewayUrl   = config('getnet.url');
+            $merchant = config('getnet.merchant');
+            $terminal = (string) config('getnet.terminal');
+            $secret   = config('getnet.secret');
+            $url      = config('getnet.url');
 
             // ==========================
-            // 📦 PARAMS REDSYS
+            // PARAMS
             // ==========================
             $params = [
-                "DS_MERCHANT_AMOUNT"          => (string) $amountCents,
-                "DS_MERCHANT_ORDER"           => $orderCode,
-                "DS_MERCHANT_MERCHANTCODE"    => $merchantCode,
-                "DS_MERCHANT_CURRENCY"        => "978",
+                "DS_MERCHANT_AMOUNT" => (string) $amount,
+                "DS_MERCHANT_ORDER" => $orderCode,
+                "DS_MERCHANT_MERCHANTCODE" => $merchant,
+                "DS_MERCHANT_CURRENCY" => "978",
                 "DS_MERCHANT_TRANSACTIONTYPE" => "0",
-                "DS_MERCHANT_TERMINAL"        => $terminal, // FIX CRÍTICO
-                "DS_MERCHANT_MERCHANTURL"     => rtrim(config('app.url'), '/') . "/api/v1/payment/notify",
-                "DS_MERCHANT_URLOK"           => rtrim(env('FRONTEND_URL'), '/') . "/gracias",
-                "DS_MERCHANT_URLKO"           => rtrim(env('FRONTEND_URL'), '/') . "/checkout?error=pago",
+                "DS_MERCHANT_TERMINAL" => $terminal,
+                "DS_MERCHANT_MERCHANTURL" => url("/api/v1/payment/notify"),
+                "DS_MERCHANT_URLOK" => env('FRONTEND_URL') . "/gracias",
+                "DS_MERCHANT_URLKO" => env('FRONTEND_URL') . "/checkout?error=pago",
             ];
 
-            // ==========================
-            // 🔥 JSON + BASE64
-            // ==========================
-            $json = json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $base64 = base64_encode(json_encode($params));
 
-            if (!$json) {
-                throw new \Exception('JSON inválido en Redsys params');
-            }
+            $signature = $this->sign($base64, $secret, $orderCode);
 
-            $paramsBase64 = base64_encode($json);
-
-            // ==========================
-            // 🔐 FIRMA
-            // ==========================
-            $signature = $this->generateSignature($paramsBase64, $secretKey, $orderCode);
-
-            // ==========================
-            // 🧪 LOG DEBUG (IMPORTANTE)
-            // ==========================
-            Log::info('REDSYS PAYMENT INIT', [
+            Log::info('PAYMENT INIT', [
                 'order' => $orderCode,
-                'amount' => $amountCents,
-                'terminal' => $terminal,
-                'merchant' => $merchantCode,
+                'amount' => $amount,
             ]);
 
             return response()->json([
                 'success' => true,
-                'gatewayUrl' => $gatewayUrl,
-                'params' => $paramsBase64,
+                'gatewayUrl' => $url,
+                'params' => $base64,
                 'signature' => $signature,
                 'version' => 'HMAC_SHA256_V1',
             ]);
 
         } catch (\Throwable $e) {
 
-            Log::error('GETNET ERROR', [
+            Log::error('PAYMENT CREATE ERROR', [
                 'message' => $e->getMessage()
             ]);
 
             return response()->json([
                 'success' => false,
-                'error' => 'Error iniciando pago'
+                'error' => 'Internal error'
             ], 500);
         }
     }
 
-    // ==========================
-    // 🔐 FIRMA REDSYS CORRECTA
-    // ==========================
-    private function generateSignature($paramsBase64, $secretKey, $orderCode)
+    private function sign($params, $key, $order)
     {
-        $key = $secretKey;
+        $order8 = substr($order, 0, 8);
 
-        // SOLO 8 primeros caracteres (REGLA REDSYS)
-        $order8 = substr($orderCode, 0, 8);
+        $iv = str_repeat(chr(0), 8);
 
-        // derivación clave
-        $derivedKey = openssl_encrypt(
+        $key = openssl_encrypt(
             $order8,
             'DES-EDE3-ECB',
             $key,
             OPENSSL_RAW_DATA
         );
 
-        // firma final
-        return base64_encode(
-            hash_hmac('sha256', $paramsBase64, $derivedKey, true)
-        );
+        return base64_encode(hash_hmac('sha256', $params, $key, true));
     }
 }

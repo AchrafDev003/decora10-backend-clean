@@ -15,214 +15,110 @@ class GetnetNotifyController extends Controller
     {
         try {
 
-            // 🔑 Activar debug manual
             $debug = $request->get('debug') == 1;
 
-            // ==========================
-            // 📦 INPUT
-            // ==========================
-            $merchantParams = $request->input('Ds_MerchantParameters');
-            $signature      = $request->input('Ds_Signature');
+            $params = $request->input('Ds_MerchantParameters');
+            $signature = $request->input('Ds_Signature');
 
-            if ($debug) {
-                return response()->json([
-                    'step' => 'input',
-                    'merchantParams' => $merchantParams,
-                    'signature' => $signature,
-                ]);
+            if (!$params || !$signature) {
+                return $this->debug($debug, 'missing_params');
             }
 
-            if (!$merchantParams || !$signature) {
-                return response('KO', 400);
-            }
-
-            // ==========================
-            // 📦 DECODE
-            // ==========================
-            $decoded = json_decode(base64_decode($merchantParams), true);
-
-            if ($debug) {
-                return response()->json([
-                    'step' => 'decoded',
-                    'decoded' => $decoded,
-                ]);
-            }
+            $decoded = json_decode(base64_decode($params), true);
 
             if (!is_array($decoded)) {
-                return response('KO', 400);
+                return $this->debug($debug, 'invalid_json');
             }
 
-            Log::info('GETNET NOTIFY RAW', $decoded);
-
-            // ==========================
-            // 📦 CAMPOS (IMPORTANTE MAYÚSCULAS)
-            // ==========================
             $orderCode = $decoded['DS_ORDER'] ?? null;
             $response  = (int) ($decoded['DS_RESPONSE'] ?? 9999);
             $amount    = (int) ($decoded['DS_AMOUNT'] ?? 0);
-            $authCode  = $decoded['DS_AUTHORISATIONCODE'] ?? null;
-
-            if ($debug) {
-                return response()->json([
-                    'step' => 'fields',
-                    'orderCode' => $orderCode,
-                    'response' => $response,
-                    'amount' => $amount,
-                    'authCode' => $authCode,
-                ]);
-            }
+            $auth      = $decoded['DS_AUTHORISATIONCODE'] ?? null;
 
             if (!$orderCode) {
-                return response('KO', 400);
+                return $this->debug($debug, 'no_order');
             }
 
-            // ==========================
-            // 🔐 FIRMA
-            // ==========================
-            $secretKey = config('getnet.secret');
+            $secret = config('getnet.secret');
 
-            $order8 = substr($orderCode, 0, 8);
-
-            $derivedKey = openssl_encrypt(
-                $order8,
+            $key = openssl_encrypt(
+                substr($orderCode, 0, 8),
                 'DES-EDE3-ECB',
-                $secretKey,
+                $secret,
                 OPENSSL_RAW_DATA
             );
 
-            $expectedSignature = base64_encode(
-                hash_hmac('sha256', $merchantParams, $derivedKey, true)
-            );
+            $expected = base64_encode(hash_hmac('sha256', $params, $key, true));
 
-            if ($debug) {
-                return response()->json([
-                    'step' => 'signature',
-                    'expected' => $expectedSignature,
-                    'received' => $signature,
-                    'match' => hash_equals($expectedSignature, $signature),
-                ]);
-            }
-
-            if (!hash_equals($expectedSignature, $signature)) {
-                Log::error('Firma inválida', [
-                    'expected' => $expectedSignature,
-                    'received' => $signature
-                ]);
+            if (!hash_equals($expected, $signature)) {
+                Log::warning('INVALID SIGNATURE', compact('expected', 'signature'));
                 return response('KO', 400);
             }
 
-            // ==========================
-            // 🧾 BUSCAR ORDER
-            // ==========================
             $order = Order::where('order_code_bank', $orderCode)->first();
 
-            if ($debug) {
-                return response()->json([
-                    'step' => 'order_lookup',
-                    'orderCode' => $orderCode,
-                    'order' => $order,
-                ]);
-            }
+            if (!$order) return response('KO', 404);
 
-            if (!$order) {
-                return response('KO', 404);
-            }
+            $payment = $order->payment;
 
-            $payment = Payment::where('order_id', $order->id)
-                ->where('provider', 'getnet')
-                ->first();
+            if (!$payment) return response('KO', 404);
 
-            if ($debug) {
-                return response()->json([
-                    'step' => 'payment_lookup',
-                    'payment' => $payment,
-                ]);
-            }
-
-            if (!$payment) {
-                return response('KO', 404);
-            }
-
-            // ==========================
-            // 🔁 IDEMPOTENCIA
-            // ==========================
+            // idempotencia
             if ($payment->status === 'pagado') {
-                return response('OK', 200)
-                    ->header('Content-Type', 'text/plain');
+                return response('OK', 200)->header('Content-Type', 'text/plain');
             }
 
-            // ==========================
-            // 💰 VALIDAR IMPORTE
-            // ==========================
             $expectedAmount = (int) round($order->total * 100);
 
-            if ($debug) {
-                return response()->json([
-                    'step' => 'amount_check',
-                    'expected' => $expectedAmount,
-                    'received' => $amount,
-                    'match' => $amount === $expectedAmount,
-                ]);
-            }
-
             if ($amount !== $expectedAmount) {
-                Log::error('Importe incorrecto', [
+                Log::error('AMOUNT MISMATCH', [
                     'expected' => $expectedAmount,
                     'received' => $amount
                 ]);
                 return response('KO', 400);
             }
 
-            // ==========================
-            // 💳 RESULTADO PAGO
-            // ==========================
+            // OK PAYMENT
             if ($response === 0) {
 
                 $payment->update([
                     'status' => 'pagado',
-                    'transaction_id' => $authCode,
+                    'transaction_id' => $auth
                 ]);
 
                 $order->update(['status' => 'pagado']);
 
-                OrderStatusHistory::create([
-                    'order_id' => $order->id,
-                    'status'   => 'pagado',
-                    'nota'     => 'Pago confirmado por Getnet',
-                ]);
-
-                Log::info('PAGO OK', ['order' => $order->id]);
+                Log::info('PAYMENT OK', ['order' => $order->id]);
 
             } else {
 
                 $payment->update(['status' => 'failed']);
                 $order->update(['status' => 'failed']);
 
-                OrderStatusHistory::create([
-                    'order_id' => $order->id,
-                    'status'   => 'failed',
-                    'nota'     => 'Pago rechazado por Redsys',
-                ]);
-
-                Log::warning('PAGO KO', [
+                Log::warning('PAYMENT FAILED', [
                     'order' => $order->id,
                     'response' => $response
                 ]);
             }
 
-            // ==========================
-            // ✅ RESPUESTA FINAL
-            // ==========================
-            return response('OK', 200)
-                ->header('Content-Type', 'text/plain');
+            return response('OK', 200)->header('Content-Type', 'text/plain');
 
         } catch (\Throwable $e) {
 
-            Log::error('Notify exception', [
+            Log::error('NOTIFY CRASH', [
                 'message' => $e->getMessage()
             ]);
 
             return response('KO', 500);
         }
+    }
+    private function debug($enabled, $step)
+    {
+        if (!$enabled) return response('KO', 400);
+
+        return response()->json([
+            'debug_step' => $step,
+            'time' => now()
+        ]);
     }
 }
