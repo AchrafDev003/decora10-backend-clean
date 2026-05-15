@@ -16,32 +16,34 @@ class GetnetNotifyController extends Controller
         try {
 
             // ==========================
-            // 📥 Datos
+            // 📥 INPUT REDSYS
             // ==========================
             $merchantParams = $request->input('Ds_MerchantParameters');
             $signature      = $request->input('Ds_Signature');
 
             if (!$merchantParams || !$signature) {
+                Log::error('Notify missing params');
                 return response('KO', 400);
             }
 
             // ==========================
-            // 🔓 Decode
+            // 🔓 DECODE SAFE
             // ==========================
             $decoded = json_decode(base64_decode($merchantParams), true);
 
-            if (!$decoded) {
+            if (!is_array($decoded)) {
+                Log::error('Notify decode failed');
                 return response('KO', 400);
             }
 
             Log::info('GETNET NOTIFY RAW', $decoded);
 
             // ==========================
-            // 📊 Datos clave
+            // 📊 DATOS CLAVE
             // ==========================
             $orderCode = $decoded['Ds_Order'] ?? null;
-            $response  = intval($decoded['Ds_Response'] ?? 9999);
-            $amount    = intval($decoded['Ds_Amount'] ?? 0);
+            $response  = (int) ($decoded['Ds_Response'] ?? 9999);
+            $amount    = (int) ($decoded['Ds_Amount'] ?? 0);
             $authCode  = $decoded['Ds_AuthorisationCode'] ?? null;
 
             if (!$orderCode) {
@@ -49,17 +51,18 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 🔐 VALIDAR FIRMA (CORRECTO)
+            // 🔐 FIRMA (CORREGIDA)
             // ==========================
-            $secretKey = config('getnet.secret'); // ✔ RAW
+            $secretKey = config('getnet.secret');
 
             $order8 = substr($orderCode, 0, 8);
 
+            // ⚠️ IMPORTANTE: SIN ZERO_PADDING (ROMPE EN PRODUCCIÓN)
             $derivedKey = openssl_encrypt(
                 $order8,
                 'DES-EDE3-ECB',
                 $secretKey,
-                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING
+                OPENSSL_RAW_DATA
             );
 
             $expectedSignature = base64_encode(
@@ -71,15 +74,17 @@ class GetnetNotifyController extends Controller
                     'expected' => $expectedSignature,
                     'received' => $signature
                 ]);
+
                 return response('KO', 400);
             }
 
             // ==========================
-            // 🔎 Pedido
+            // 🔎 BUSCAR PEDIDO
             // ==========================
             $order = Order::where('order_code_bank', $orderCode)->first();
 
             if (!$order) {
+                Log::error('Order not found', ['order' => $orderCode]);
                 return response('KO', 404);
             }
 
@@ -88,37 +93,44 @@ class GetnetNotifyController extends Controller
                 ->first();
 
             if (!$payment) {
+                Log::error('Payment not found', ['order_id' => $order->id]);
                 return response('KO', 404);
             }
 
             // ==========================
-            // 🛡️ Idempotencia
+            // 🛡️ ID EMPOTENCIA
             // ==========================
             if ($payment->status === 'pagado') {
                 return response('OK', 200);
             }
 
             // ==========================
-            // 💰 Validar importe
+            // 💰 VALIDAR IMPORTE
             // ==========================
             $expectedAmount = (int) round($order->total * 100);
 
             if ($amount !== $expectedAmount) {
-                Log::error('Importe incorrecto');
+                Log::error('Importe incorrecto', [
+                    'expected' => $expectedAmount,
+                    'received' => $amount
+                ]);
+
                 return response('KO', 400);
             }
 
             // ==========================
-            // 💳 Resultado
+            // 💳 RESULTADO REDSYS
             // ==========================
-            if ($response >= 0 && $response <= 99) {
+            if ($response === 0 || ($response >= 0 && $response <= 99)) {
 
                 $payment->update([
                     'status' => 'pagado',
                     'transaction_id' => $authCode,
                 ]);
 
-                $order->update(['status' => 'pagado']);
+                $order->update([
+                    'status' => 'pagado'
+                ]);
 
                 OrderStatusHistory::create([
                     'order_id' => $order->id,
@@ -126,27 +138,38 @@ class GetnetNotifyController extends Controller
                     'nota'     => 'Pago confirmado por Getnet',
                 ]);
 
-                Log::info('Pago OK', ['order' => $order->id]);
+                Log::info('PAGO OK', ['order' => $order->id]);
 
             } else {
 
-                $payment->update(['status' => 'failed']);
-                $order->update(['status' => 'failed']);
+                $payment->update([
+                    'status' => 'failed'
+                ]);
+
+                $order->update([
+                    'status' => 'failed'
+                ]);
 
                 OrderStatusHistory::create([
                     'order_id' => $order->id,
                     'status'   => 'failed',
-                    'nota'     => 'Pago rechazado',
+                    'nota'     => 'Pago rechazado por Redsys',
                 ]);
 
-                Log::warning('Pago KO', ['response' => $response]);
+                Log::warning('PAGO KO', [
+                    'order' => $order->id,
+                    'response' => $response
+                ]);
             }
 
+            // ==========================
+            // 🟢 RESPUESTA OBLIGATORIA
+            // ==========================
             return response('OK', 200);
 
         } catch (\Throwable $e) {
 
-            Log::error('Notify error', [
+            Log::error('Notify exception', [
                 'message' => $e->getMessage()
             ]);
 
