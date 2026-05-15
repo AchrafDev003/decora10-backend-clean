@@ -13,112 +13,80 @@ class GetnetNotifyController extends Controller
 {
     public function notify(Request $request)
     {
-        try {
+        $params = $request->input('Ds_MerchantParameters');
+        $signature = $request->input('Ds_Signature');
 
-            $debug = $request->get('debug') == 1;
+        if (!$params || !$signature) {
+            return response('KO', 400);
+        }
 
-            $params = $request->input('Ds_MerchantParameters');
-            $signature = $request->input('Ds_Signature');
+        // 🔥 FIX BASE64 URL SAFE
+        $decodedJson = base64_decode(strtr($params, '-_', '+/'));
+        $decoded = json_decode($decodedJson, true);
 
-            if (!$params || !$signature) {
-                return $this->debug($debug, 'missing_params');
-            }
+        if (!is_array($decoded)) {
+            return response('KO', 400);
+        }
 
-            $decoded = json_decode(base64_decode($params), true);
+        $orderCode = $decoded['DS_MERCHANT_ORDER'] ?? null;
+        $amount = (int) ($decoded['DS_MERCHANT_AMOUNT'] ?? 0);
+        $response = (int) ($decoded['DS_RESPONSE'] ?? 9999);
+        $auth = $decoded['DS_AUTHORISATIONCODE'] ?? null;
 
-            if (!is_array($decoded)) {
-                return $this->debug($debug, 'invalid_json');
-            }
+        if (!$orderCode) return response('KO', 400);
 
-            $orderCode = $decoded['DS_ORDER'] ?? null;
-            $response  = (int) ($decoded['DS_RESPONSE'] ?? 9999);
-            $amount    = (int) ($decoded['DS_AMOUNT'] ?? 0);
-            $auth      = $decoded['DS_AUTHORISATIONCODE'] ?? null;
+        $order = Order::where('order_code_bank', $orderCode)->first();
+        if (!$order) return response('KO', 404);
 
-            if (!$orderCode) {
-                return $this->debug($debug, 'no_order');
-            }
+        $payment = $order->payment;
+        if (!$payment) return response('KO', 404);
 
-            $secret = config('getnet.secret');
+        // 🔁 IDEMPOTENCIA
+        if ($payment->status === 'pagado') {
+            return response('OK', 200);
+        }
 
-            $key = openssl_encrypt(
-                substr($orderCode, 0, 8),
-                'DES-EDE3-ECB',
-                $secret,
-                OPENSSL_RAW_DATA
-            );
+        // 💰 VALIDACIÓN
+        $expected = (int) round($order->total * 100);
 
-            $expected = base64_encode(hash_hmac('sha256', $params, $key, true));
+        if ($expected !== $amount) {
+            Log::error('AMOUNT MISMATCH', compact('expected', 'amount'));
+            return response('KO', 400);
+        }
 
-            if (!hash_equals($expected, $signature)) {
-                Log::warning('INVALID SIGNATURE', compact('expected', 'signature'));
-                return response('KO', 400);
-            }
+        // 🔐 FIRMA
+        $key = openssl_encrypt(
+            substr($orderCode, 0, 8),
+            'DES-EDE3-ECB',
+            config('getnet.secret'),
+            OPENSSL_RAW_DATA
+        );
 
-            $order = Order::where('order_code_bank', $orderCode)->first();
+        $expectedSignature = base64_encode(
+            hash_hmac('sha256', $params, $key, true)
+        );
 
-            if (!$order) return response('KO', 404);
+        if (!hash_equals($expectedSignature, $signature)) {
+            Log::error('INVALID SIGNATURE');
+            return response('KO', 400);
+        }
 
-            $payment = $order->payment;
+        // 💳 RESULTADO
+        if ($response === 0) {
 
-            if (!$payment) return response('KO', 404);
-
-            // idempotencia
-            if ($payment->status === 'pagado') {
-                return response('OK', 200)->header('Content-Type', 'text/plain');
-            }
-
-            $expectedAmount = (int) round($order->total * 100);
-
-            if ($amount !== $expectedAmount) {
-                Log::error('AMOUNT MISMATCH', [
-                    'expected' => $expectedAmount,
-                    'received' => $amount
-                ]);
-                return response('KO', 400);
-            }
-
-            // OK PAYMENT
-            if ($response === 0) {
-
-                $payment->update([
-                    'status' => 'pagado',
-                    'transaction_id' => $auth
-                ]);
-
-                $order->update(['status' => 'pagado']);
-
-                Log::info('PAYMENT OK', ['order' => $order->id]);
-
-            } else {
-
-                $payment->update(['status' => 'failed']);
-                $order->update(['status' => 'failed']);
-
-                Log::warning('PAYMENT FAILED', [
-                    'order' => $order->id,
-                    'response' => $response
-                ]);
-            }
-
-            return response('OK', 200)->header('Content-Type', 'text/plain');
-
-        } catch (\Throwable $e) {
-
-            Log::error('NOTIFY CRASH', [
-                'message' => $e->getMessage()
+            $payment->update([
+                'status' => 'pagado',
+                'transaction_id' => $auth
             ]);
 
-            return response('KO', 500);
-        }
-    }
-    private function debug($enabled, $step)
-    {
-        if (!$enabled) return response('KO', 400);
+            $order->update(['status' => 'pagado']);
 
-        return response()->json([
-            'debug_step' => $step,
-            'time' => now()
-        ]);
+        } else {
+
+            $payment->update(['status' => 'failed']);
+            $order->update(['status' => 'fallo_pago']);
+        }
+
+        return response('OK', 200);
     }
 }
