@@ -15,15 +15,38 @@ class GetnetNotifyController extends Controller
     {
         try {
 
+            // 🔑 Activar debug manual
+            $debug = $request->get('debug') == 1;
 
+            // ==========================
+            // 📦 INPUT
+            // ==========================
             $merchantParams = $request->input('Ds_MerchantParameters');
             $signature      = $request->input('Ds_Signature');
+
+            if ($debug) {
+                return response()->json([
+                    'step' => 'input',
+                    'merchantParams' => $merchantParams,
+                    'signature' => $signature,
+                ]);
+            }
 
             if (!$merchantParams || !$signature) {
                 return response('KO', 400);
             }
 
+            // ==========================
+            // 📦 DECODE
+            // ==========================
             $decoded = json_decode(base64_decode($merchantParams), true);
+
+            if ($debug) {
+                return response()->json([
+                    'step' => 'decoded',
+                    'decoded' => $decoded,
+                ]);
+            }
 
             if (!is_array($decoded)) {
                 return response('KO', 400);
@@ -31,17 +54,30 @@ class GetnetNotifyController extends Controller
 
             Log::info('GETNET NOTIFY RAW', $decoded);
 
-            $orderCode = $decoded['Ds_Order'] ?? null;
-            $response  = (int) ($decoded['Ds_Response'] ?? 9999);
-            $amount    = (int) ($decoded['Ds_Amount'] ?? 0);
-            $authCode  = $decoded['Ds_AuthorisationCode'] ?? null;
+            // ==========================
+            // 📦 CAMPOS (IMPORTANTE MAYÚSCULAS)
+            // ==========================
+            $orderCode = $decoded['DS_ORDER'] ?? null;
+            $response  = (int) ($decoded['DS_RESPONSE'] ?? 9999);
+            $amount    = (int) ($decoded['DS_AMOUNT'] ?? 0);
+            $authCode  = $decoded['DS_AUTHORISATIONCODE'] ?? null;
+
+            if ($debug) {
+                return response()->json([
+                    'step' => 'fields',
+                    'orderCode' => $orderCode,
+                    'response' => $response,
+                    'amount' => $amount,
+                    'authCode' => $authCode,
+                ]);
+            }
 
             if (!$orderCode) {
                 return response('KO', 400);
             }
 
             // ==========================
-            // 🔐 FIRMA (DEBE SER IGUAL QUE CREATE)
+            // 🔐 FIRMA
             // ==========================
             $secretKey = config('getnet.secret');
 
@@ -58,6 +94,15 @@ class GetnetNotifyController extends Controller
                 hash_hmac('sha256', $merchantParams, $derivedKey, true)
             );
 
+            if ($debug) {
+                return response()->json([
+                    'step' => 'signature',
+                    'expected' => $expectedSignature,
+                    'received' => $signature,
+                    'match' => hash_equals($expectedSignature, $signature),
+                ]);
+            }
+
             if (!hash_equals($expectedSignature, $signature)) {
                 Log::error('Firma inválida', [
                     'expected' => $expectedSignature,
@@ -66,7 +111,18 @@ class GetnetNotifyController extends Controller
                 return response('KO', 400);
             }
 
+            // ==========================
+            // 🧾 BUSCAR ORDER
+            // ==========================
             $order = Order::where('order_code_bank', $orderCode)->first();
+
+            if ($debug) {
+                return response()->json([
+                    'step' => 'order_lookup',
+                    'orderCode' => $orderCode,
+                    'order' => $order,
+                ]);
+            }
 
             if (!$order) {
                 return response('KO', 404);
@@ -76,15 +132,38 @@ class GetnetNotifyController extends Controller
                 ->where('provider', 'getnet')
                 ->first();
 
+            if ($debug) {
+                return response()->json([
+                    'step' => 'payment_lookup',
+                    'payment' => $payment,
+                ]);
+            }
+
             if (!$payment) {
                 return response('KO', 404);
             }
 
+            // ==========================
+            // 🔁 IDEMPOTENCIA
+            // ==========================
             if ($payment->status === 'pagado') {
-                return response('OK', 200);
+                return response('OK', 200)
+                    ->header('Content-Type', 'text/plain');
             }
 
+            // ==========================
+            // 💰 VALIDAR IMPORTE
+            // ==========================
             $expectedAmount = (int) round($order->total * 100);
+
+            if ($debug) {
+                return response()->json([
+                    'step' => 'amount_check',
+                    'expected' => $expectedAmount,
+                    'received' => $amount,
+                    'match' => $amount === $expectedAmount,
+                ]);
+            }
 
             if ($amount !== $expectedAmount) {
                 Log::error('Importe incorrecto', [
@@ -95,7 +174,7 @@ class GetnetNotifyController extends Controller
             }
 
             // ==========================
-            // 💳 SOLO 0000 = OK REAL
+            // 💳 RESULTADO PAGO
             // ==========================
             if ($response === 0) {
 
@@ -131,7 +210,11 @@ class GetnetNotifyController extends Controller
                 ]);
             }
 
-            return response('OK', 200);
+            // ==========================
+            // ✅ RESPUESTA FINAL
+            // ==========================
+            return response('OK', 200)
+                ->header('Content-Type', 'text/plain');
 
         } catch (\Throwable $e) {
 
