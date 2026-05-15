@@ -14,6 +14,13 @@ class GetnetNotifyController extends Controller
     public function notify(Request $request)
     {
         try {
+            return response()->json([
+                'hit' => true,
+                'time' => now(),
+                'ip' => $request->ip(),
+                'headers' => $request->headers->all(),
+                'body' => $request->all(),
+            ]);
 
             $merchantParams = $request->input('Ds_MerchantParameters');
             $signature      = $request->input('Ds_Signature');
